@@ -5,10 +5,10 @@ RM = rm -rf
 all: dropbox_server dropbox_client
 
 dropbox_server:  server.o list.o utils.o
-	$(CC) $(CFLAGS) -o exe/dropbox_server server.o list.o utils.o
+	$(CC) $(CFLAGS) -o exe/dropbox_server server.o list.o utils.o -pthread
 
 dropbox_client:  client.o list.o utils.o
-	$(CC) $(CFLAGS) -o exe/dropbox_client client.o list.o utils.o
+	$(CC) $(CFLAGS) -o exe/dropbox_client client.o list.o utils.o -pthread
 
 server.o:  server/server.c
 	$(CC) $(CFLAGS) -c server/server.c
