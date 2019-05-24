@@ -17,6 +17,7 @@
 #include <sys/sem.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -33,15 +34,27 @@
 #define LOG_ON "LOG_ON"
 #define LOG_OFF "LOG_OFF"
 #define GET_FILE_LIST "GET_FILE_LIST"
+#define FILE_LIST "FILE_LIST"
 #define GET_FILE "GET_FILE"
 #define GET_CLIENTS "GET_CLIENTS"
+#define FILE_NOT_FOUND "FILE_NOT_FOUND"
+#define FILE_UP_TO_DATE "FILE_UP_TO_DATE"
+#define FILE_SIZE "FILE_SIZE"
 
 // USEFUL SIZES
-#define MAX_STRING_INT_SIZE 12 // including '\0' character
-#define MAX_MESSAGE_SIZE 15 // including '\0' character
+#define MAX_STRING_INT_SIZE 12  // including '\0' character
+#define MAX_MESSAGE_SIZE 15     // including '\0' character
 
 void printErrorLn(char* s);
 
+char fileExists(char* fileName);
+
 void tryRead(int socketId, void* buffer, int bufferSize);
+
+int connectToPeer(int* socketFd, struct sockaddr_in* peerAddr);
+
+int createServer(int* socketFd, struct sockaddr_in* socketAddr, int portNum, int maxConnectionsNum);
+
+int selectSocket(int socketFd1, int socketFd2);
 
 #endif

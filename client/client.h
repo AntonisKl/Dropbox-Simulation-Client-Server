@@ -1,18 +1,32 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
-#include "../utils/utils.h"
 #include "../list/list.h"
+#include "../utils/utils.h"
 
 #define MAX_CONNECTIONS 10
 
-List* clientsList;
-char* buffer;
+#define MAX_PATH_SIZE 128
+#define FILE_CHUNK_SIZE 100
+
+pthread_mutex_t cyclicBufferMutex = PTHREAD_MUTEX_INITIALIZER, clientListMutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t cyclicBufferFullCond = PTHREAD_COND_INITIALIZER, cyclicBufferEmptyCond = PTHREAD_COND_INITIALIZER;
+
+typedef struct CyclicBuffer CyclicBuffer;
+
+List *clientsList, *filesList;
+CyclicBuffer cyclicBuffer;
+
+struct CyclicBuffer {
+    char* buffer;
+    int startIndex, endIndex;
+    unsigned int curSize, maxSize;
+};
 
 typedef struct BufferNode {
-    char filePath[128];
+    char filePath[MAX_PATH_SIZE];
     time_t version;
-    struct in_addr ip;
+    uint32_t ip;
     int portNumber;
 } BufferNode;
 
@@ -20,7 +34,7 @@ void handleExit(int exitNum);
 
 void handleArgs(int argc, char** argv, char** dirName, int* portNum, int* workerThreadsNum, int* bufferSize, int* serverPort, struct sockaddr_in* serverAddr);
 
-void* workerThreadJob( void* a);
+void* workerThreadJob(void* a);
 
 // recursively traverses the directory with name inputDirName and all of its subdirectories and
 // adds to fileList all entries of the regular files and directories of the directory with name inputDirName

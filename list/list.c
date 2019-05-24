@@ -45,7 +45,7 @@ ClientInfo* initClientInfo(struct in_addr ipStruct, int portNumber) {
     clientInfo->ipStruct = ipStruct;
     clientInfo->portNumber = portNumber;
 
-    clientInfo->nextClientInfo= NULL;
+    clientInfo->nextClientInfo = NULL;
 
     return clientInfo;
 }
@@ -106,7 +106,7 @@ void* findNodeInList(List* list, void* searchValue1, void* searchValue2) {
     void* curNode = list->firstNode;
 
     while (curNode != NULL) {
-        if (list->mode == FILES ? strcmp(((File*)curNode)->path, (char*)searchValue1) == 0 : ((ClientInfo*)curNode)->portNumber == *((int*)searchValue1) && (((ClientInfo*)curNode)->ipStruct).s_addr == ((struct in_addr*)searchValue2)->s_addr) {
+        if (list->mode == FILES ? strcmp(((File*)curNode)->path, (char*)searchValue1) == 0 : ((ClientInfo*)curNode)->portNumber == *((int*)searchValue1) && (((ClientInfo*)curNode)->ipStruct).s_addr == *(uint32_t*)searchValue2) {
             return curNode;
         } else if (list->mode == FILES ? strcmp((char*)searchValue1, ((File*)curNode)->path) < 0 : *((int*)searchValue1) < ((ClientInfo*)curNode)->portNumber) {  // no need for searching further since the list is sorted by fileId
             return NULL;
@@ -148,7 +148,6 @@ void* addNodeToList(List* list, void* nodeToInsert) {
             return list->firstNode;
         }
         while (curNode != NULL) {
-            
             if (list->mode == FILES ? ((File*)curNode)->nextFile != NULL : ((ClientInfo*)curNode)->nextClientInfo != NULL) {
                 if (list->mode == FILES ? strcmp(((File*)nodeToInsert)->path, ((File*)curNode)->nextFile->path) < 0 : ((ClientInfo*)nodeToInsert)->portNumber < ((ClientInfo*)nodeToInsert)->nextClientInfo->portNumber) {
                     // Node* fileToInsert = initNode(path, contentsSize, type);
@@ -179,10 +178,10 @@ void* addNodeToList(List* list, void* nodeToInsert) {
                 }
                 list->size++;
                 // printf(ANSI_COLOR_MAGENTA "Inserted file with path %s to List\n" ANSI_COLOR_RESET, path);
-                return list->mode == FILES ? (void*) ((File*)curNode)->nextFile :(void*) ((ClientInfo*)curNode)->nextClientInfo;
+                return list->mode == FILES ? (void*)((File*)curNode)->nextFile : (void*)((ClientInfo*)curNode)->nextClientInfo;
             }
 
-            curNode = list->mode == FILES ? (void*)((File*)curNode)->nextFile : (void*) ((ClientInfo*)curNode)->nextClientInfo;
+            curNode = list->mode == FILES ? (void*)((File*)curNode)->nextFile : (void*)((ClientInfo*)curNode)->nextClientInfo;
         }
     }
 
@@ -207,7 +206,7 @@ int deleteNodeFromList(List* list, void* searchValue1, void* searchValue2) {
     if (list->mode == FILES ? strcmp(((File*)nodeToDelete)->path, ((File*)list->firstNode)->path) == 0
                             : ((ClientInfo*)list->firstNode)->portNumber == ((int)(((ClientInfo*)nodeToDelete)->portNumber) &&
                                                                              ((struct in_addr)((ClientInfo*)list->firstNode)->ipStruct).s_addr == ((struct in_addr)((ClientInfo*)nodeToDelete)->ipStruct).s_addr)) {
-        list->firstNode = list->mode == FILES ? (void*)((File*)nodeToDelete)->nextFile : (void*) ((ClientInfo*)nodeToDelete)->nextClientInfo;
+        list->firstNode = list->mode == FILES ? (void*)((File*)nodeToDelete)->nextFile : (void*)((ClientInfo*)nodeToDelete)->nextClientInfo;
     }
     if (list->mode == FILES ? ((File*)nodeToDelete)->prevFile != NULL : ((ClientInfo*)nodeToDelete)->prevClientInfo != NULL) {
         // nodeToDelete->prevNode->nextNode = nodeToDelete->nextNode;
