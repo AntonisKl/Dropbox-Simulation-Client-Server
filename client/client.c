@@ -1,6 +1,29 @@
 #include "client.h"
 
 void handleExit(int exitNum) {
+    int retVal;
+    pthread_kill(bufferFillerThreadId, SIGUSR1);
+    for (int i = 0; i < sizeof(threadIds) / sizeof(pthread_t); i++) {
+        pthread_kill(threadIds[i], SIGUSR1);
+    }
+
+    pthread_join(bufferFillerThreadId, (void**)&retVal);
+    if (retVal == 1) {
+        printErrorLn("Buffer filler thread exited with an error");
+    }
+
+    for (int i = 0; i < sizeof(threadIds) / sizeof(pthread_t); i++) {
+        pthread_join(threadIds[i], (void**)&retVal);
+        if (retVal == 1) {
+            printf(ANSI_COLOR_RED "Worker thread with id %lu exited with an error" ANSI_COLOR_RESET "\n", threadIds[i]);
+        }
+    }
+
+    if (send(serverSocketFd, LOG_OFF, MAX_MESSAGE_SIZE, 0) == -1) {  // send LOG_ON to server
+        perror("Send error");
+        exit(1);
+    }
+
     exit(exitNum);
 }
 
@@ -113,82 +136,182 @@ void populateFileList(List* fileList, char* inputDirName, int indent) {
     closedir(dir);  // close current directory
 }
 
-void initBuffer(int bufferSize) {
-    cyclicBuffer.buffer = malloc(bufferSize * sizeof(BufferNode));
-    cyclicBuffer.maxSize = bufferSize;
-    cyclicBuffer.curSize = 0;
-    cyclicBuffer.startIndex = 0;
-    cyclicBuffer.endIndex = 0;
-
-    return;
-}
-
-void trySend(int socketFd, void* buffer, int bufferSize) {
+void trySend(int socketFd, void* buffer, int bufferSize, CallingMode callingMode) {
     if (send(socketFd, buffer, bufferSize, 0) == -1) {  // send LOG_ON to server
         perror("Send error");
-        handleExit(1);
+        if (callingMode == MAIN_THREAD)
+            handleExit(1);
+        else
+            pthread_exit((void**)1);
     }
 
     return;
 }
 
-BufferNode* initBufferNode(char* filePath, time_t version, uint32_t ip, int portNum) {
-    // char filePath[MAX_PATH_SIZE];
-    // time_t version;
-    // struct in_addr ip;
-    // int portNumber;
-    BufferNode* bufferNode = (BufferNode*)malloc(sizeof(BufferNode));
-    strcpy(bufferNode->filePath, filePath);
-    bufferNode->version = version;
-    bufferNode->ip = ip;
-    bufferNode->portNumber = portNum;
+void tryInitAndSend(int* socketFd, void* buffer, int bufferSize, CallingMode callingMode, struct sockaddr_in* addr, int portNum) {
+    addr->sin_family = AF_INET;
+    addr->sin_port = portNum;
 
-    return bufferNode;
-}
+    if (connectToPeer(socketFd, addr) == 1) {
+        if (callingMode == MAIN_THREAD)
+            handleExit(1);
+        else
+            pthread_exit((void**)1);
+    }
 
-int cyclicBufferEmpty(CyclicBuffer* cyclicBuffer) {
-    return cyclicBuffer->curSize == 0;
-}
-
-int cyclicBufferFull(CyclicBuffer* cyclicBuffer) {
-    return cyclicBuffer->curSize == cyclicBuffer->maxSize;
-}
-
-int calculateBufferIndex(int index) {
-    return index * sizeof(BufferNode);
-}
-
-int addNodeToCyclicBuffer(CyclicBuffer* cyclicBuffer, char* filePath, time_t version, uint32_t ip, int portNum) {
-    if (cyclicBufferFull(cyclicBuffer))
-        return 1;
-
-    cyclicBuffer->endIndex += sizeof(BufferNode);
-    // memcpy(cyclicBuffer->cyclicBuffer->buffer[cyclicBuffer->endIndex])
-    cyclicBuffer->buffer[calculateBufferIndex(cyclicBuffer->endIndex)] = initBufferNode(filePath, version, ip, portNum);
-    cyclicBuffer->curSize += sizeof(BufferNode);
-
-    return 0;
-}
-
-BufferNode* getNodeFromCyclicBuffer(CyclicBuffer* cyclicBuffer) {
-    if (cyclicBufferEmpty(cyclicBuffer))
-        return NULL;
-
-    BufferNode* bufferNodeToReturn = cyclicBuffer->buffer[calculateBufferIndex(cyclicBuffer->startIndex)];
-    cyclicBuffer->startIndex += sizeof(BufferNode);
-    cyclicBuffer->curSize -= sizeof(BufferNode);
-
-    return bufferNodeToReturn;
-}
-
-void freeBufferNode(BufferNode** bufferNode) {
-    free(*bufferNode);
-    (*bufferNode) = NULL;
+    if (send(*socketFd, buffer, bufferSize, 0) == -1) {  // send LOG_ON to server
+        perror("Send error");
+        if (callingMode == MAIN_THREAD)
+            handleExit(1);
+        else
+            pthread_exit((void**)1);
+    }
 
     return;
 }
 
+void tryRead(int socketId, void* buffer, int bufferSize, CallingMode callingMode) {
+    int returnValue, tempBufferSize = bufferSize, progress = 0;
+
+    // trySelect(fd);
+    returnValue = read(socketId, buffer, tempBufferSize);
+    while (returnValue < tempBufferSize && returnValue != 0) {  // rare case
+        // not all desired bytes were read, so read the remaining bytes and add them to buffer
+        if (returnValue == -1) {
+            perror("Read error");
+            if (callingMode == MAIN_THREAD)
+                handleExit(1);
+            else
+                pthread_exit((void**)1);
+        }
+
+        tempBufferSize -= returnValue;
+        progress += returnValue;
+        // trySelect(socketId);
+        returnValue = read(socketId, buffer + progress, tempBufferSize);  // read remaining bytes that aren't written yet
+    }
+
+    // if (returnValue == 0) {  // 0 = EOF which means that writer failed and closed the pipe early
+    //     handleExit(1, SIGUSR1);
+    // }
+
+    return;
+}
+
+void buildClientName(char (*clientName)[], uint32_t ip, int portNum) {
+    // char ipS[MAX_STRING_INT_SIZE], portNumS[MAX_STRING_INT_SIZE];
+    // sprintf(ipS, "%u", ip);
+    // sprintf(portNumS, "%d", portNum);
+    sprintf(*clientName, "%u_%d", ip, portNum);
+
+    return;
+}
+
+void handleSigIntMainThread(int signal) {
+    if (signal != SIGINT) {
+        printErrorLn("Client caught wrong signal instead of SIGINT");
+    }
+    printf("Client caught SIGINT\n");
+
+    handleExit(1);
+}
+
+void handleSigUsrSecondaryThread(int signal) {
+    if (signal != SIGUSR1) {
+        printErrorLn("Secondary thread caught wrong signal instead of SIGUSR1");
+    }
+    printf("Secondary thread caught SIGUSR1\n");
+
+    pthread_exit((void**)1);
+}
+
+void* bufferFillerThreadJob(void* a) {
+    struct sigaction sigAction;
+    // setup the sighub handler
+    sigAction.sa_handler = &handleSigUsrSecondaryThread;
+
+    // restart the system call, if at all possible
+    sigAction.sa_flags = SA_RESTART;
+
+    // add only SIGINT signal (SIGUSR1 and SIGUSR2 signals are handled by the client's forked subprocesses)
+    sigemptyset(&sigAction.sa_mask);
+    sigaddset(&sigAction.sa_mask, SIGUSR1);
+
+    if (sigaction(SIGUSR1, &sigAction, NULL) == -1) {
+        perror("Error: cannot handle SIGINT");  // Should not happen
+    }
+
+    ////// store client infos in buffer
+
+    ClientInfo* curClientInfo;
+
+    while (1) {
+        // nextClientIp = curClientInfo->ipStruct.s_addr;
+        // nextClientPortNum = curClientInfo->portNumber;
+
+        // pthread_mutex_lock(&cyclicBufferMutex);
+
+        // while (cyclicBufferFull(&cyclicBuffer)) {
+        //     pthread_cond_wait(&cyclicBufferFullCond, &cyclicBufferMutex);
+        // }
+
+        if (nextClientIp == -1) {
+            // pthread_mutex_unlock(&clientListMutex);
+            // pthread_mutex_unlock(&cyclicBufferMutex);
+            break;
+        }
+        pthread_mutex_lock(&clientListMutex);
+
+        curClientInfo = findNodeInList(clientsList, &nextClientPortNum, &nextClientIp);
+
+        if (curClientInfo->nextClientInfo != NULL) {
+            nextClientIp = curClientInfo->nextClientInfo->ipStruct.s_addr;
+            nextClientPortNum = curClientInfo->nextClientInfo->portNumber;
+        } else {
+            nextClientIp = -1;
+        }
+
+        pthread_mutex_lock(&cyclicBufferMutex);
+        while (cyclicBufferFull(&cyclicBuffer)) {
+            pthread_cond_wait(&cyclicBufferFullCond, &cyclicBufferMutex);
+        }
+        if (addNodeToCyclicBuffer(&cyclicBuffer, NULL, -1, curClientInfo->ipStruct.s_addr, curClientInfo->portNumber) == 1) {
+            printErrorLn("Something's wrong\n");  ///////////////////////////////////////////////////////////////////////////////// should delete this
+            pthread_mutex_unlock(&cyclicBufferMutex);
+            pthread_mutex_unlock(&clientListMutex);
+            break;
+        }
+
+        pthread_mutex_unlock(&cyclicBufferMutex);
+        pthread_mutex_unlock(&clientListMutex);
+
+        pthread_cond_signal(&cyclicBufferEmptyCond);
+
+        // nextClientInfoIndex++;
+
+        // nextClientIp = curClientInfo->ipStruct.s_addr;
+        // nextClientPortNum = curClientInfo->portNumber;
+    }
+
+    pthread_exit((void**)0);
+}
+
 void* workerThreadJob(void* a) {
+    struct sigaction sigAction;
+    // setup the sighub handler
+    sigAction.sa_handler = &handleSigUsrSecondaryThread;
+
+    // restart the system call, if at all possible
+    sigAction.sa_flags = SA_RESTART;
+
+    // add only SIGINT signal (SIGUSR1 and SIGUSR2 signals are handled by the client's forked subprocesses)
+    sigemptyset(&sigAction.sa_mask);
+    sigaddset(&sigAction.sa_mask, SIGUSR1);
+
+    if (sigaction(SIGUSR1, &sigAction, NULL) == -1) {
+        perror("Error: cannot handle SIGINT");  // Should not happen
+    }
+
     while (1) {
         pthread_mutex_lock(&cyclicBufferMutex);
 
@@ -209,48 +332,47 @@ void* workerThreadJob(void* a) {
         pthread_cond_signal(&cyclicBufferFullCond);
         // }
 
+        pthread_mutex_lock(&clientListMutex);
+
+        if (findNodeInList(clientsList, &curBufferNode->portNumber, &curBufferNode->ip) == NULL) {
+            printErrorLn("Client info invalid\n");
+            freeBufferNode(&curBufferNode);
+            continue;
+        }
+
+        pthread_mutex_unlock(&clientListMutex);
+
+        int curPeerSocketFd;
+        struct sockaddr_in curPeerSocketAddr;
+        curPeerSocketAddr.sin_family = AF_INET;
+        curPeerSocketAddr.sin_port = ntohs(curBufferNode->portNumber);
+        curPeerSocketAddr.sin_addr.s_addr = ntohl(curBufferNode->ip);
+
+        short int filePathSize;
+        time_t version;
         if (curBufferNode->filePath == NULL) {  // client buffer node
-            pthread_mutex_lock(&clientListMutex);
 
-            if (findNodeInList(clientsList, curBufferNode->portNumber, curBufferNode->ip) == NULL) {
-                pthread_mutex_unlock(&clientListMutex);
-                printErrorLn("Client info invalid\n");
-                freeBufferNode(&curBufferNode);
-                continue;
-            }
+            if (connectToPeer(&curPeerSocketFd, &curPeerSocketAddr) == 1)
+                pthread_exit((void**)1);  //                                    TODO: add thread exit function maybe??????????????????????
 
-            pthread_mutex_unlock(&clientListMutex);
-
-            int curPeerSocketFd;
-            struct sockaddr_in curPeerSocketAddr;
-
-            curPeerSocketAddr.sin_family = AF_INET;
-            curPeerSocketAddr.sin_port = ntohs(curBufferNode->portNumber);
-            curPeerSocketAddr.sin_addr.s_addr = ntohs(curBufferNode->ip);
-
-            if (connectToPeer(curPeerSocketFd, &curPeerSocketAddr) == 1)
-                handleExit(1);  //                                    TODO: add thread exit function maybe??????????????????????
-
-            trySend(curPeerSocketFd, GET_FILE_LIST, MAX_MESSAGE_SIZE);
+            trySend(curPeerSocketFd, GET_FILE_LIST, MAX_MESSAGE_SIZE, SECONDARY_THREAD);
 
             unsigned int totalFilesNum;
-            tryRead(curPeerSocketFd, &totalFilesNum, 4);
+            tryRead(curPeerSocketFd, &totalFilesNum, 4, SECONDARY_THREAD);
 
-            short int filePathSize;
-            char pathNoInputDirName;
-            time_t version;
+            char* pathNoInputDirName;
 
             for (int i = 0; i < totalFilesNum; i++) {
-                tryRead(curPeerSocketFd, &filePathSize, 2);
+                tryRead(curPeerSocketFd, &filePathSize, 2, SECONDARY_THREAD);
 
                 pathNoInputDirName = (char*)malloc(filePathSize + 1);
-                tryRead(curPeerSocketFd, &pathNoInputDirName, filePathSize);
+                tryRead(curPeerSocketFd, &pathNoInputDirName, filePathSize, SECONDARY_THREAD);
 
-                tryRead(curPeerSocketFd, &version, 8);
+                tryRead(curPeerSocketFd, &version, 8, SECONDARY_THREAD);
 
                 pthread_mutex_lock(&cyclicBufferMutex);
 
-                if (cyclicBufferFull(&cyclicBuffer)) {
+                while (cyclicBufferFull(&cyclicBuffer)) {
                     pthread_cond_wait(&cyclicBufferFullCond, &cyclicBufferMutex);
                 }
                 // char cyclicBufferWasEmpty = cyclicBufferEmpty(&cyclicBuffer);
@@ -270,16 +392,124 @@ void* workerThreadJob(void* a) {
                 }
             }
 
-            freeBufferNode(&curBufferNode);
+            // freeBufferNode(&curBufferNode);
             close(curPeerSocketFd);
         } else {  // file buffer node
+            char clientName[MAX_CLIENT_NAME_SIZE];
+            buildClientName(&clientName, curBufferNode->ip, curBufferNode->portNumber);
+
+            char filePath[strlen(clientName) + strlen(curBufferNode->filePath) + 1];
+            sprintf(filePath, "%s/%s", clientName, curBufferNode->filePath);
+
+            if (connectToPeer(&curPeerSocketFd, &curPeerSocketAddr) == 1)
+                pthread_exit((void**)-1);
+
+            trySend(curPeerSocketFd, GET_FILE, MAX_MESSAGE_SIZE, SECONDARY_THREAD);
+
+            filePathSize = strlen(curBufferNode->filePath);
+            trySend(curPeerSocketFd, &filePathSize, 2, SECONDARY_THREAD);
+            trySend(curPeerSocketFd, curBufferNode->filePath, filePathSize, SECONDARY_THREAD);
+
+            if (!fileExists(filePath)) {  // file does not exist locally
+                version = -1;
+            } else {
+                version = curBufferNode->version;
+                // trySendFromThread(curPeerSocketFd, &version, 8);
+            }
+
+            trySend(curPeerSocketFd, &version, 8, SECONDARY_THREAD);
+            char incomingMessage[MAX_MESSAGE_SIZE];
+            tryRead(curPeerSocketFd, &incomingMessage, MAX_MESSAGE_SIZE, SECONDARY_THREAD);
+            if (strcmp(incomingMessage, FILE_SIZE) == 0) {
+                int incomingVersion;
+                tryRead(curPeerSocketFd, &incomingVersion, 8, SECONDARY_THREAD);
+
+                File* foundFile = findNodeInList(filesList, curBufferNode->filePath, NULL);
+                if (foundFile == NULL) {
+                    printErrorLn("Something's wrong");
+                } else {
+                    foundFile->version = incomingVersion;
+                }
+
+                int contentsSize;
+                tryRead(curPeerSocketFd, &contentsSize, 4, SECONDARY_THREAD);
+
+                if (contentsSize == -1) {  // is a directory
+                    createDir(filePath);
+                    close(curPeerSocketFd);
+                    continue;
+                } else if (contentsSize == 0) {  // is an empty file
+                    createAndWriteToFile(filePath, "");
+                    close(curPeerSocketFd);
+                    continue;
+                }
+
+                // is a file with contents
+                // fileContents: buffer in which all of the read contents of the file will be stored in order to eventually write them to a file
+                // bytesRead: the bytes of file contents that are read from fifo pipe (for logging purposes)
+                char contents[contentsSize + 1];
+                int bytesRead = 0;
+                if (contentsSize > 0) {
+                    memset(contents, 0, contentsSize + 1);  // clear fileContents buffer
+                    char chunk[FILE_CHUNK_SIZE + 1];        // chunk: a part of the file contents
+
+                    // remainingContentsSize: the number of bytes that are remaining to be read from the fifo pipe
+                    // tempBufferSize: temporary buffer size to read from pipe in each while loop
+                    int remainingContentsSize = contentsSize;
+                    int tempBufferSize;
+                    while (remainingContentsSize > 0) {
+                        memset(chunk, 0, FILE_CHUNK_SIZE + 1);  // clear chunk buffer
+
+                        // if the remaining contents of file have size less than the buffer size, read only the remaining contents from fifo pipe
+                        tempBufferSize = (remainingContentsSize < FILE_CHUNK_SIZE ? remainingContentsSize : FILE_CHUNK_SIZE);
+
+                        tryRead(curPeerSocketFd, chunk, tempBufferSize, SECONDARY_THREAD);  // read a chunk of size tempBufferSize from pipe
+
+                        bytesRead += tempBufferSize;              // for logging purposes
+                        strcat(contents, chunk);                  // concatenated the read chunk to the total file content's buffer
+                        remainingContentsSize -= tempBufferSize;  // proceed tempBufferSize bytes
+                    }
+                }
+
+                // // write to log
+                // fprintf(logFileP, "Reader with pid %d received file with path \"%s\" and read %d bytes from fifo pipe\n", getpid(), filePath, bytesRead);
+                // fflush(logFileP);
+
+                // char mirrorFilePath[strlen(mirrorIdDirPath) + strlen(filePath) + 2];  // mirrorFilePath: the path of the mirrored file
+                // sprintf(mirrorFilePath, "%s/%s", mirrorIdDirPath, filePath);           // format: [mirrorDir]/[id]/[filePath]
+
+                createAndWriteToFile(filePath, contents);
+            }
+            // trySend(selectedSocket, FILE_SIZE, MAX_MESSAGE_SIZE);
+            // trySend(selectedSocket, &curFile->version, 8);
+            // trySend(selectedSocket, &curFile->contentsSize, 4);
+
+            close(curPeerSocketFd);
         }
+        freeBufferNode(&curBufferNode);
     }
+    pthread_exit((void**)0);
 }
 
 int main(int argc, char** argv) {
+    struct sigaction sigAction;
+
+    // setup the sighub handler
+    sigAction.sa_handler = &handleSigIntMainThread;
+
+    // restart the system call, if at all possible
+    sigAction.sa_flags = SA_RESTART;
+
+    // add only SIGINT signal (SIGUSR1 and SIGUSR2 signals are handled by the client's forked subprocesses)
+    sigemptyset(&sigAction.sa_mask);
+    sigaddset(&sigAction.sa_mask, SIGINT);
+
+    if (sigaction(SIGINT, &sigAction, NULL) == -1) {
+        perror("Error: cannot handle SIGINT");  // Should not happen
+    }
+
     char* dirName;
-    int portNum, workerThreadsNum, bufferSize, serverPort, serverSocketFd, mySocketFd;
+    int portNum, workerThreadsNum, bufferSize, serverPort, mySocketFd;
     struct sockaddr_in serverAddr, myAddr;
 
     handleArgs(argc, argv, &dirName, &portNum, &workerThreadsNum, &bufferSize, &serverPort, &serverAddr);
@@ -290,59 +520,108 @@ int main(int argc, char** argv) {
     if (connectToPeer(&serverSocketFd, &serverAddr) == 1) {
         handleExit(1);
     }
+    printLn("Connected to server");
+
+    struct sockaddr_in localAddr;
+    socklen_t localAddrLength = sizeof(localAddr);
+    getsockname(serverSocketFd, (struct sockaddr*)&localAddr,
+                &localAddrLength);
+    printf("local address: %s\n", inet_ntoa(localAddr.sin_addr));
 
     // if (send(serverSocketFd, LOG_ON, MAX_MESSAGE_SIZE, 0) == -1) {  // send LOG_ON to server
     //     perror("Send error");
     //     handleExit(1);
     // }
+    uint32_t myIpToSend = htonl(localAddr.sin_addr.s_addr);
+    int myPortToSend = htons(portNum);
 
-    trySend(serverSocketFd, LOG_ON, MAX_MESSAGE_SIZE);
+    trySend(serverSocketFd, LOG_ON, MAX_MESSAGE_SIZE, MAIN_THREAD);
+    trySend(serverSocketFd, &myIpToSend, 4, MAIN_THREAD);
+    // printLn("after read 1");
 
+    trySend(serverSocketFd, &myPortToSend, 4, MAIN_THREAD);
     // if (send(serverSocketFd, GET_CLIENTS, MAX_MESSAGE_SIZE, 0) == -1) {
     //     perror("Send error");
     //     handleExit(1);
     // }
 
-    trySend(serverSocketFd, GET_CLIENTS, MAX_MESSAGE_SIZE);
+    tryInitAndSend(&serverSocketFd, GET_CLIENTS, MAX_MESSAGE_SIZE, MAIN_THREAD, &serverAddr, serverPort);
 
-    int receivedPortNum;
+    char message[MAX_MESSAGE_SIZE];
+    tryRead(serverSocketFd, &message, MAX_MESSAGE_SIZE, MAIN_THREAD);
+
+    if (strcmp(message, CLIENT_LIST)) {
+        printErrorLn("Initial communication with server failed");
+        handleExit(1);
+    }
+
+    int receivedPortNum, clientsNum;
     struct in_addr receivedIpStruct;
     // char endOfComm = 0;
 
-    filesList = initList(FILES);
-    populateFileList(filesList, dirName, 0);
-
     clientsList = initList(CLIENTS);
 
-    tryRead(serverSocketFd, &receivedIpStruct.s_addr, sizeof(uint32_t));
+    tryRead(serverSocketFd, &clientsNum, 4, MAIN_THREAD);
 
-    while (receivedIpStruct.s_addr != -1) {  // -1 ------------> end of initial communication with server
-        tryRead(serverSocketFd, &receivedPortNum, 4);
+    // tryRead(serverSocketFd, &receivedIpStruct.s_addr, 4, MAIN_THREAD);
+
+    // while (receivedIpStruct.s_addr != -1) {  // -1 ------------> end of initial communication with server
+    //     tryRead(serverSocketFd, &receivedPortNum, 4, MAIN_THREAD);
+
+    //     addNodeToList(clientsList, initClientInfo(receivedIpStruct, receivedPortNum));
+
+    //     tryRead(serverSocketFd, &receivedIpStruct.s_addr, 4, MAIN_THREAD);
+    // }
+
+    for (int i = 0; i < clientsNum; i++) {
+        tryRead(serverSocketFd, &receivedIpStruct.s_addr, 4, MAIN_THREAD);
+        tryRead(serverSocketFd, &receivedPortNum, 4, MAIN_THREAD);
+
+        receivedIpStruct.s_addr = ntohl(receivedIpStruct.s_addr);
 
         addNodeToList(clientsList, initClientInfo(receivedIpStruct, receivedPortNum));
-
-        tryRead(serverSocketFd, &receivedIpStruct.s_addr, 4);
     }
 
-    initBuffer(bufferSize);
+    printLn("Got clients from server");
 
-    int nextClientInfoIndex = 0;
+    initBuffer(&cyclicBuffer, bufferSize);
+
     ////// store client infos in buffer
+    int clientsInserted = 0;
     ClientInfo* curClientInfo = clientsList->firstNode;
     while (curClientInfo != NULL) {
-        if (addNodeToCyclicBuffer(&cyclicBuffer, NULL, -1, curClientInfo->ipStruct.s_addr, curClientInfo->portNumber) == 1) {
+        nextClientIp = curClientInfo->ipStruct.s_addr;
+        nextClientPortNum = curClientInfo->portNumber;
+
+        if (addNodeToCyclicBuffer(&cyclicBuffer, NULL, -1, curClientInfo->ipStruct.s_addr, curClientInfo->portNumber) == 1)
             break;
-        }
-        nextClientInfoIndex++;
+
+        clientsInserted++;
+        // nextClientInfoIndex++;
+        // nextClientIp = curClientInfo->ipStruct.s_addr;
+        // nextClientPortNum = curClientInfo->portNumber;
 
         curClientInfo = curClientInfo->nextClientInfo;
     }
 
-    pthread_t threadIds[workerThreadsNum];
+    printLn("Filled cyclic buffer");
+
+    filesList = initList(FILES);
+    populateFileList(filesList, dirName, 0);
+
+    if (clientsInserted < clientsList->size) {
+        pthread_create(&bufferFillerThreadId, NULL, bufferFillerThreadJob, NULL);  // 3rd arg is the function which I will add, 4th arg is the void* arg of the function
+        printLn("Created buffer filler thread cause clients were too much");
+    }
+
+    // pthread_t threadIds[workerThreadsNum];
+    threadIds = (pthread_t*)malloc(workerThreadsNum * sizeof(pthread_t*));
 
     for (int i = 0; i < workerThreadsNum; i++) {
         pthread_create(&threadIds[i], NULL, workerThreadJob, NULL);  // 3rd arg is the function which I will add, 4th arg is the void* arg of the function
     }
+
+    printLn("Created worker threads");
 
     // // Creating socket file descriptor
     // if ((mySocketFd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -368,12 +647,14 @@ int main(int argc, char** argv) {
         handleExit(1);
     }
 
+    printLn("Created a server to accept incoming client connections");
+
     int newSocketFd, selectedSocket;
     struct sockaddr_in incomingAddr;
     int incomingAddrLen = sizeof(incomingAddr);
 
-    char message[MAX_MESSAGE_SIZE];
     while (1) {
+        printLn("Listening for incoming client connections");
         if ((newSocketFd = accept(mySocketFd, (struct sockaddr*)&incomingAddr, (socklen_t*)&incomingAddrLen)) < 0) {
             perror("Accept error");
             handleExit(1);
@@ -389,11 +670,11 @@ int main(int argc, char** argv) {
                 continue;
         }
 
-        tryRead(selectedSocket, &message, MAX_MESSAGE_SIZE);
+        tryRead(selectedSocket, &message, MAX_MESSAGE_SIZE, MAIN_THREAD);
 
-        if (strcmp(message, GET_FILE_LIST)) {
-            trySend(selectedSocket, FILE_LIST, MAX_MESSAGE_SIZE);
-            trySend(selectedSocket, filesList->size, 4);
+        if (strcmp(message, GET_FILE_LIST) == 0) {
+            trySend(selectedSocket, FILE_LIST, MAX_MESSAGE_SIZE, MAIN_THREAD);
+            trySend(selectedSocket, &filesList->size, 4, MAIN_THREAD);
 
             File* curFile = filesList->firstNode;
             while (curFile != NULL) {
@@ -405,24 +686,24 @@ int main(int argc, char** argv) {
 
                 short int filePathSize = strlen(pathNoInputDirName);
 
-                trySend(selectedSocket, &filePathSize, 2);  // short int
+                trySend(selectedSocket, &filePathSize, 2, MAIN_THREAD);  // short int
 
-                trySend(selectedSocket, pathNoInputDirName, filePathSize);
+                trySend(selectedSocket, pathNoInputDirName, filePathSize, MAIN_THREAD);
 
-                trySend(selectedSocket, curFile->version, sizeof(long int));
+                trySend(selectedSocket, &curFile->version, sizeof(long int), MAIN_THREAD);
 
                 curFile = curFile->nextFile;
             }
 
             close(selectedSocket);
-        } else if (strcmp(message, GET_FILE)) {
+        } else if (strcmp(message, GET_FILE) == 0) {
             char* curFilePathNoInputDirName;
             time_t curFileVersion;
             short int curFilePathSize;
 
-            tryRead(selectedSocket, &curFilePathSize, 2);
-            tryRead(selectedSocket, &curFilePathNoInputDirName, curFilePathSize);
-            tryRead(selectedSocket, &curFileVersion, 8);
+            tryRead(selectedSocket, &curFilePathSize, 2, MAIN_THREAD);
+            tryRead(selectedSocket, &curFilePathNoInputDirName, curFilePathSize, MAIN_THREAD);
+            tryRead(selectedSocket, &curFileVersion, 8, MAIN_THREAD);
 
             char curFilePath[strlen(dirName) + curFilePathSize];
             // strcpy(curFilePath, dirName);
@@ -436,19 +717,19 @@ int main(int argc, char** argv) {
             File* curFile = findNodeInList(filesList, curFilePath, NULL);
 
             if (curFile == NULL) {
-                trySend(selectedSocket, FILE_NOT_FOUND, MAX_MESSAGE_SIZE);
+                trySend(selectedSocket, FILE_NOT_FOUND, MAX_MESSAGE_SIZE, MAIN_THREAD);
                 continue;
             }
 
             if (curFile->version == curFileVersion) {
-                trySend(selectedSocket, FILE_UP_TO_DATE, MAX_MESSAGE_SIZE);
+                trySend(selectedSocket, FILE_UP_TO_DATE, MAX_MESSAGE_SIZE, MAIN_THREAD);
                 continue;
             }
 
-            trySend(selectedSocket, FILE_SIZE, MAX_MESSAGE_SIZE);
+            trySend(selectedSocket, FILE_SIZE, MAX_MESSAGE_SIZE, MAIN_THREAD);
 
-            trySend(selectedSocket, &curFile->version, 8);
-            trySend(selectedSocket, &curFile->contentsSize, 4);
+            trySend(selectedSocket, &curFile->version, 8, MAIN_THREAD);
+            trySend(selectedSocket, &curFile->contentsSize, 4, MAIN_THREAD);
 
             int fd;
 
@@ -482,7 +763,7 @@ int main(int argc, char** argv) {
 
                     // tryWrite(fifoFd, buffer, tempBufferSize);  // write a chunk of the current file to fifo pipe
 
-                    trySend(selectedSocket, curBuffer, tempBufferSize);
+                    trySend(selectedSocket, curBuffer, tempBufferSize, MAIN_THREAD);
 
                     bytesWritten += tempBufferSize;           // for logging purposes
                     remainingContentsSize -= tempBufferSize;  // proceed tempBufferSize bytes
@@ -519,17 +800,47 @@ int main(int argc, char** argv) {
 
             // trySend(newSocketFd, )  // send whole file at once //////////////////////////////////////////////////////////////////////////// maybe change this to chunks
             close(selectedSocket);
-        } else if (strcmp(message, LOG_OFF)) {
+        } else if (strcmp(message, USER_OFF) == 0) {
             int curIp, curPortNum;
-            if (incomingAddr.sin_addr.s_addr != serverAddr.sin_addr.s_addr || incomingAddr.sin_port != serverPort) {
-                printf("Got LOG_ON message from a non-server application\n");
+
+            tryRead(selectedSocket, &curIp, 4, MAIN_THREAD);
+            tryRead(selectedSocket, &curPortNum, 4, MAIN_THREAD);
+            curIp = ntohl(curIp);
+            curPortNum = ntohs(curPortNum);
+
+            if (curIp != serverAddr.sin_addr.s_addr || curPortNum != serverPort) {
+                printErrorLn("Got USER_OFF message from a non-server application\n");
                 continue;
             }
 
-            tryRead(selectedSocket, &curIp, 4);
-            tryRead(selectedSocket, &curPortNum, 4);
-
+            pthread_mutex_lock(&clientListMutex);
             deleteNodeFromList(clientsList, &curPortNum, &curIp);
+            pthread_mutex_unlock(&clientListMutex);
+        } else if (strcmp(message, USER_ON) == 0) {
+            int curPortNum;
+            struct in_addr curIpStruct;
+            tryRead(selectedSocket, &curIpStruct.s_addr, 4, MAIN_THREAD);
+            tryRead(selectedSocket, &curPortNum, 4, MAIN_THREAD);
+            curIpStruct.s_addr = ntohl(curIpStruct.s_addr);
+            curPortNum = ntohs(curPortNum);
+
+            pthread_mutex_lock(&clientListMutex);
+
+            addNodeToList(clientsList, initClientInfo(curIpStruct, curPortNum));
+
+            pthread_mutex_unlock(&clientListMutex);
+
+            pthread_mutex_lock(&cyclicBufferMutex);
+
+            while (cyclicBufferFull(&cyclicBuffer)) {
+                pthread_cond_wait(&cyclicBufferFullCond, &cyclicBufferMutex);
+            }
+
+            addNodeToCyclicBuffer(&cyclicBuffer, NULL, -1, curIpStruct.s_addr, curPortNum);
+
+            pthread_mutex_unlock(&cyclicBufferMutex);
+
+            pthread_cond_signal(&cyclicBufferEmptyCond);
         }
     }
 

@@ -11,6 +11,7 @@ File* initFile(char* path, off_t contentsSize, time_t timestamp) {
     // file->type = type;
 
     file->nextFile = NULL;
+    file->prevFile = NULL;
 
     return file;
 }
@@ -23,6 +24,7 @@ void freeFile(File** file) {
     (*file)->path = NULL;
 
     (*file)->nextFile = NULL;
+    (*file)->prevFile = NULL;
 
     free(*file);
     (*file) = NULL;
@@ -46,6 +48,7 @@ ClientInfo* initClientInfo(struct in_addr ipStruct, int portNumber) {
     clientInfo->portNumber = portNumber;
 
     clientInfo->nextClientInfo = NULL;
+    clientInfo->prevClientInfo = NULL;
 
     return clientInfo;
 }
@@ -58,6 +61,7 @@ void freeClientInfo(ClientInfo** clientInfo) {
     // (*file)->path = NULL;
 
     (*clientInfo)->nextClientInfo = NULL;
+    (*clientInfo)->prevClientInfo = NULL;
 
     free(*clientInfo);
     (*clientInfo) = NULL;
@@ -122,8 +126,23 @@ void* findNodeInList(List* list, void* searchValue1, void* searchValue2) {
 }
 
 void* addNodeToList(List* list, void* nodeToInsert) {
+        // printf("hedddddd\n");
+    if (list == NULL)
+        return NULL;
+    // printf("heoo\n");
+
+    void* foundNode = list->mode == FILES ? findNodeInList(list, ((File*)nodeToInsert)->path, NULL) : findNodeInList(list, &((ClientInfo*)nodeToInsert)->portNumber, &((ClientInfo*)nodeToInsert)->ipStruct.s_addr);
+        // printf("hsssse\n");
+
+    if (foundNode != NULL) { // is duplicate
+        // printf("")
+        return NULL; // do not add duplicate
+    }
+        // printf("hee\n");
+
     // nodeToInsert = list->mode == FILES ? (File*) nodeToInsert : (ClientInfo*) nodeToInsert;
     if (list->size == 0) {
+        // printf("right\n");
         list->firstNode = nodeToInsert;
 
         list->size++;

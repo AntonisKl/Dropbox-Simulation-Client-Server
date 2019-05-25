@@ -40,16 +40,29 @@
 #define FILE_NOT_FOUND "FILE_NOT_FOUND"
 #define FILE_UP_TO_DATE "FILE_UP_TO_DATE"
 #define FILE_SIZE "FILE_SIZE"
+#define USER_ON "USER_ON"
+#define CLIENT_LIST "CLIENT_LIST"
+#define USER_OFF "USER_OFF"
+#define ERROR_IP_PORT_NOT_FOUND_IN_LIST "ERROR_IP_PORT_NOT_FOUND_IN_LIST"
 
 // USEFUL SIZES
 #define MAX_STRING_INT_SIZE 12  // including '\0' character
-#define MAX_MESSAGE_SIZE 15     // including '\0' character
+#define MAX_MESSAGE_SIZE 32     // including '\0' character
+
+typedef enum CallingMode {
+    SECONDARY_THREAD,
+    MAIN_THREAD
+} CallingMode;
 
 void printErrorLn(char* s);
 
+void printLn(char* s);
+
 char fileExists(char* fileName);
 
-void tryRead(int socketId, void* buffer, int bufferSize);
+void createDir(char* dirPath);
+
+void createAndWriteToFile(char* fileName, char* contents);
 
 int connectToPeer(int* socketFd, struct sockaddr_in* peerAddr);
 

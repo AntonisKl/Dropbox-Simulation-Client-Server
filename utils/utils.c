@@ -6,6 +6,12 @@ void printErrorLn(char* s) {
     return;
 }
 
+void printLn(char* s) {
+    printf(ANSI_COLOR_GREEN "%s" ANSI_COLOR_RESET "\n", s);
+
+    return;
+}
+
 char fileExists(char* fileName) {
     if (access(fileName, F_OK) != -1) {
         // file exists
@@ -16,28 +22,38 @@ char fileExists(char* fileName) {
     return 0;
 }
 
-void tryRead(int socketId, void* buffer, int bufferSize) {
-    int returnValue, tempBufferSize = bufferSize, progress = 0;
-
-    // trySelect(fd);
-    returnValue = read(socketId, buffer, tempBufferSize);
-    while (returnValue < tempBufferSize && returnValue != 0) {  // rare case
-        // not all desired bytes were read, so read the remaining bytes and add them to buffer
-        if (returnValue == -1) {
-            perror("Read error");
-            return;
+void createDir(char* dirPath) {
+    int pid = fork();
+    if (pid == 0) {
+        char* args[] = {"mkdir", "-p", dirPath, NULL};  // -p parameter is used to create the whole directory structure if it does not exist
+        if (execvp(args[0], args) == -1) {
+            perror("execvp failed");
+            exit(1);
         }
-
-        tempBufferSize -= returnValue;
-        progress += returnValue;
-        // trySelect(socketId);
-        returnValue = read(socketId, buffer + progress, tempBufferSize);  // read remaining bytes that aren't written yet
+    } else if (pid == -1) {
+        perror("fork error");
+        exit(1);
+    } else {
+        wait(NULL);
     }
 
-    // if (returnValue == 0) {  // 0 = EOF which means that writer failed and closed the pipe early
-    //     handleExit(1, SIGUSR1);
-    // }
+    return;
+}
 
+void createAndWriteToFile(char* fileName, char* contents) {
+    FILE* file = fopen(fileName, "w");  // overwrite if file exists
+    if (file == NULL) {
+        perror("fopen failed");
+        exit(1);
+    }
+
+    fprintf(file, "%s", contents);
+    fflush(file);
+
+    if (fclose(file) == EOF) {
+        perror("fclose failed");
+        exit(1);
+    }
     return;
 }
 
@@ -50,11 +66,13 @@ int connectToPeer(int* socketFd, struct sockaddr_in* peerAddr) {
     // serverAddr.sin_family = AF_INET;
     // serverAddr.sin_port = htons(serverPort);
 
-    if (connect((*socketFd), (struct sockaddr*)&peerAddr, sizeof(peerAddr)) < 0) {
-        perror("\nSocket connection failed\n");
+
+    if (connect((*socketFd), (struct sockaddr*)peerAddr, sizeof(*peerAddr)) < 0) {
+        perror("Socket connection failed");
         return 1;
     }
-    
+    printf("Connected to port %d and ip %s\n", peerAddr->sin_port, inet_ntoa(peerAddr->sin_addr));
+
     return 0;
 }
 
@@ -73,17 +91,19 @@ int createServer(int* socketFd, struct sockaddr_in* socketAddr, int portNum, int
     //     perror("setsockopt");
     //     exit(EXIT_FAILURE);
     // }
+    // memset(&socketAddr, 0, sizeof(socketAddr));
 
     socketAddr->sin_family = AF_INET;
-    socketAddr->sin_addr.s_addr = htonl(INADDR_ANY);
-    socketAddr->sin_port = htons(portNum);
+    socketAddr->sin_addr.s_addr = INADDR_ANY;
+    socketAddr->sin_port = portNum;
 
-    if (bind(socketFd, (struct sockaddr*)&socketAddr,
-             sizeof(socketAddr)) < 0) {
+    if (bind(*socketFd, (struct sockaddr*)socketAddr,
+             sizeof(*socketAddr)) < 0) {
         perror("Bind error");
         return 1;
     }
-    if (listen(socketFd, maxConnectionsNum) < 0) {
+    printf("ha\n");
+    if (listen(*socketFd, maxConnectionsNum) < 0) {
         perror("Listen error");
         return 1;
     }
@@ -93,12 +113,12 @@ int createServer(int* socketFd, struct sockaddr_in* socketAddr, int portNum, int
 
 int selectSocket(int socketFd1, int socketFd2) {
     fd_set socketFds;
-    struct timeval timeout;
-    int selectRet, result;
+    // struct timeval timeout;
+    int selectRet;
 
     /* Set time limit. */
-    timeout.tv_sec = 3;
-    timeout.tv_usec = 0;
+    // timeout.tv_sec = 3;
+    // timeout.tv_usec = 0;
     /* Create a descriptor set containing our two sockets.  */
     FD_ZERO(&socketFds);
     FD_SET(socketFd1, &socketFds);
