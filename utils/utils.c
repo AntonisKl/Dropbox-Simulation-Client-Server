@@ -65,7 +65,8 @@ int connectToPeer(int* socketFd, struct sockaddr_in* peerAddr) {
 
     // serverAddr.sin_family = AF_INET;
     // serverAddr.sin_port = htons(serverPort);
-
+    // peerAddr->sin_addr.s_addr = htonl(peerAddr->sin_addr.s_addr);
+    // peerAddr->sin_port = htons(peerAddr->sin_port);
 
     if (connect((*socketFd), (struct sockaddr*)peerAddr, sizeof(*peerAddr)) < 0) {
         perror("Socket connection failed");

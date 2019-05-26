@@ -90,7 +90,7 @@ int main(int argc, char** argv) {
         printLn("Accepted an incoming connection");
 
         char message[MAX_MESSAGE_SIZE];
-        tryRead(newSocketFd, &message, MAX_MESSAGE_SIZE, MAIN_THREAD);
+        tryRead(newSocketFd, message, MAX_MESSAGE_SIZE, MAIN_THREAD);
         printf("Read message: %s\n", message);
 
         if (strcmp(message, LOG_ON) == 0) {

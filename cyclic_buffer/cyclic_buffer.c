@@ -5,7 +5,7 @@ void initBuffer(CyclicBuffer* cyclicBuffer, int bufferSize) {
     cyclicBuffer->maxSize = bufferSize;
     cyclicBuffer->curSize = 0;
     cyclicBuffer->startIndex = 0;
-    cyclicBuffer->endIndex = 0;
+    cyclicBuffer->endIndex = -1;
 
     return;
 }
@@ -16,7 +16,12 @@ BufferNode* initBufferNode(char* filePath, time_t version, uint32_t ip, int port
     // struct in_addr ip;
     // int portNumber;
     BufferNode* bufferNode = (BufferNode*)malloc(sizeof(BufferNode));
-    strcpy(bufferNode->filePath, filePath);
+    if (filePath != NULL) {
+        strcpy(bufferNode->filePath, filePath);
+    } else {
+        strcpy(bufferNode->filePath, ",");
+    }
+    
     bufferNode->version = version;
     bufferNode->ip = ip;
     bufferNode->portNumber = portNum;

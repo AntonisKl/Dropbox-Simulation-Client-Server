@@ -18,6 +18,7 @@ pthread_t* threadIds;
 // typedef struct CyclicBuffer CyclicBuffer;
 
 int serverSocketFd;
+struct sockaddr_in serverAddr;
 
 List *clientsList, *filesList;
 CyclicBuffer cyclicBuffer;
