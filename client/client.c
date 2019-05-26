@@ -19,8 +19,7 @@ void handleExit(int exitNum) {
         }
     }
 
-   tryInitAndSend(&serverSocketFd, LOG_OFF, MAX_MESSAGE_SIZE, MAIN_THREAD, &serverAddr, serverAddr.sin_port );  // send LOG_OFF to server
-    
+    tryInitAndSend(&serverSocketFd, LOG_OFF, MAX_MESSAGE_SIZE, MAIN_THREAD, &serverAddr, serverAddr.sin_port);  // send LOG_OFF to server
 
     exit(exitNum);
 }
@@ -350,17 +349,19 @@ void* workerThreadJob(void* a) {
         int curPeerSocketFd;
         struct sockaddr_in curPeerSocketAddr;
         curPeerSocketAddr.sin_family = AF_INET;
-        curPeerSocketAddr.sin_port = ntohs(curBufferNode->portNumber);
-        curPeerSocketAddr.sin_addr.s_addr = ntohl(curBufferNode->ip);
+        curPeerSocketAddr.sin_port = curBufferNode->portNumber;
+        curPeerSocketAddr.sin_addr.s_addr =curBufferNode->ip;
 
         short int filePathSize;
         time_t version;
         if (strcmp(curBufferNode->filePath, ",") == 0) {  // client buffer node
             printf("Worker thread hanlding client node\n");
-
+            // pthread_mutex_lock(&cyclicBufferMutex);
+            printf("ip: %s, port: %d\n", inet_ntoa(curPeerSocketAddr.sin_addr), curPeerSocketAddr.sin_port);
             if (connectToPeer(&curPeerSocketFd, &curPeerSocketAddr) == 1)
                 pthread_exit((void**)1);  //                                    TODO: add thread exit function maybe??????????????????????
             printf("Worker thread hanlding client node1\n");
+            // pthread_mutex_unlock(&cyclicBufferMutex);
 
             trySend(curPeerSocketFd, GET_FILE_LIST, MAX_MESSAGE_SIZE, SECONDARY_THREAD);
 
@@ -563,8 +564,9 @@ int main(int argc, char** argv) {
         handleExit(1);
     }
 
-    int receivedPortNum, clientsNum;
+    int receivedPortNum;
     struct in_addr receivedIpStruct;
+    unsigned int clientsNum;
     // char endOfComm = 0;
 
     clientsList = initList(CLIENTS);
@@ -581,13 +583,18 @@ int main(int argc, char** argv) {
     //     tryRead(serverSocketFd, &receivedIpStruct.s_addr, 4, MAIN_THREAD);
     // }
 
+    printf("clients num: %d\n", clientsNum);
     for (int i = 0; i < clientsNum; i++) {
         tryRead(serverSocketFd, &receivedIpStruct.s_addr, 4, MAIN_THREAD);
         tryRead(serverSocketFd, &receivedPortNum, 4, MAIN_THREAD);
 
         receivedIpStruct.s_addr = ntohl(receivedIpStruct.s_addr);
+        receivedPortNum = ntohs(receivedPortNum);
 
-        addNodeToList(clientsList, initClientInfo(receivedIpStruct, receivedPortNum));
+        printf("ip1: %s, port1: %d\n", inet_ntoa(receivedIpStruct), receivedPortNum);
+        if (receivedIpStruct.s_addr != localAddr.sin_addr.s_addr || receivedPortNum != portNum)
+
+            addNodeToList(clientsList, initClientInfo(receivedIpStruct, receivedPortNum));
     }
 
     printLn("Got clients from server");
@@ -653,7 +660,6 @@ int main(int argc, char** argv) {
     //     handleExit(1);
     // }
 
-    
     if (createServer(&mySocketFd, &myAddr, portNum, MAX_CONNECTIONS)) {
         handleExit(1);
     }
@@ -663,27 +669,26 @@ int main(int argc, char** argv) {
     int newSocketFd, selectedSocket;
     struct sockaddr_in incomingAddr;
     int incomingAddrLen = sizeof(incomingAddr);
-    // char keepConnection = 0;
+    char keepConnection = 0;
 
     while (1) {
         printLn("Listening for incoming connections");
 
-        // if (!keepConnection) {
         if ((newSocketFd = accept(mySocketFd, (struct sockaddr*)&incomingAddr, (socklen_t*)&incomingAddrLen)) < 0) {
             perror("Accept error");
             handleExit(1);
         }
 
-        if ((selectedSocket = selectSocket(serverSocketFd, newSocketFd)) == -1) {
-            handleExit(1);
-        }
+        // if ((selectedSocket = selectSocket(serverSocketFd, newSocketFd)) == -1) {
+        //     handleExit(1);
+        // }
 
         if (selectedSocket == newSocketFd) {
             ClientInfo* foundClientInfo = findNodeInList(clientsList, &incomingAddr.sin_port, &incomingAddr.sin_addr.s_addr);
             if (foundClientInfo == NULL)  // ignore incoming client
                 continue;
         }
-        // }
+        selectedSocket = newSocketFd;
         // char* message = malloc(MAX_MESSAGE_SIZE);
         // memset(message, 0, MAX_MESSAGE_SIZE);
         tryRead(selectedSocket, message, MAX_MESSAGE_SIZE, MAIN_THREAD);
@@ -842,8 +847,8 @@ int main(int argc, char** argv) {
             struct in_addr curIpStruct;
             tryRead(selectedSocket, &curIpStruct.s_addr, 4, MAIN_THREAD);
             tryRead(selectedSocket, &curPortNum, 4, MAIN_THREAD);
-            curIpStruct.s_addr = ntohl(curIpStruct.s_addr);
-            curPortNum = ntohs(curPortNum);
+            curIpStruct.s_addr = curIpStruct.s_addr;
+            curPortNum = curPortNum;
 
             pthread_mutex_lock(&clientListMutex);
 
@@ -864,7 +869,7 @@ int main(int argc, char** argv) {
             pthread_cond_signal(&cyclicBufferEmptyCond);
         } else {
             printf("Got unknown message: %s\n", message);
-            // keepConnection = 1;
+            keepConnection = 1;
         }
     }
 

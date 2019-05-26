@@ -111,6 +111,13 @@ int main(int argc, char** argv) {
             struct sockaddr_in clientAddr;
             ClientInfo* curClientInfo = clientsList->firstNode;
             while (curClientInfo != NULL) {
+                printf("LOG_ON: ip1: %s, port1: %d, ip2: %s, port2: %d\n", inet_ntoa(curClientInfo->ipStruct), curClientInfo->portNumber, inet_ntoa(curIpStruct), curPortNum);
+
+                if (curClientInfo->ipStruct.s_addr == curIpStruct.s_addr && curClientInfo->portNumber == curPortNum) {
+                    printf("not sending clieeeeeeeeeeeeeeeeeeent1111111111111111\n");
+                    continue;
+                }
+
                 clientAddr.sin_family = AF_INET;
                 clientAddr.sin_port = curClientInfo->portNumber;
                 clientAddr.sin_addr.s_addr = curClientInfo->ipStruct.s_addr;
@@ -118,6 +125,8 @@ int main(int argc, char** argv) {
                 if (connectToPeer(&clientSocketFd, &clientAddr) == 1)
                     handleExit(1);
 
+                // char curBuffer[32];
+                // sprintf(curBuffer, "%s", USER_ON);
                 trySend(clientSocketFd, USER_ON, MAX_MESSAGE_SIZE, MAIN_THREAD);
                 trySend(clientSocketFd, &curIpStruct.s_addr, 4, MAIN_THREAD);
                 trySend(clientSocketFd, &curPortNum, 4, MAIN_THREAD);
@@ -132,16 +141,18 @@ int main(int argc, char** argv) {
 
             trySend(newSocketFd, CLIENT_LIST, MAX_MESSAGE_SIZE, MAIN_THREAD);
 
-            unsigned int listSendingSize = clientsList->size - 1;
+            unsigned int listSendingSize = clientsList->size;
             trySend(newSocketFd, &listSendingSize, 4, MAIN_THREAD);
 
             uint32_t ipToSend;
             int portNumToSend;
             ClientInfo* curClientInfo = clientsList->firstNode;
             while (curClientInfo != NULL) {
-                if (curClientInfo->ipStruct.s_addr == incomingAddr.sin_addr.s_addr && curClientInfo->portNumber == incomingAddr.sin_port)
-                    continue;
-
+                // printf("ip1: %s, port1: %d, ip2: %s, port2: %d\n",inet_ntoa( curClientInfo->ipStruct), curClientInfo->portNumber, inet_ntoa(incomingAddr.sin_addr), incomingAddr.sin_port );
+                // if (curClientInfo->ipStruct.s_addr == ntohl( incomingAddr.sin_addr.s_addr) && curClientInfo->portNumber == htons(incomingAddr.sin_port)) {
+                //     printf("not sending clieeeeeeeeeeeeeeeeeeen\n");
+                //     continue;
+                // }
                 ipToSend = htonl(curClientInfo->ipStruct.s_addr);
                 portNumToSend = htons(curClientInfo->portNumber);
 

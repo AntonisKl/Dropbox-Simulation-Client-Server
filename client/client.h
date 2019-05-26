@@ -5,7 +5,7 @@
 #include "../list/list.h"
 #include "../cyclic_buffer/cyclic_buffer.h"
 
-#define MAX_CONNECTIONS 10
+#define MAX_CONNECTIONS 100
 #define FILE_CHUNK_SIZE 100
 #define MAX_CLIENT_NAME_SIZE 24
 
