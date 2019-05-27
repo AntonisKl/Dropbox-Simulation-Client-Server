@@ -2,11 +2,37 @@
 
 void handleExit(int exitNum) {
     int retVal;
-    if (bufferFillerThreadCreated) {
-        pthread_kill(bufferFillerThreadId, SIGUSR1);
-    }
+    // if (bufferFillerThreadCreated) {
+    //     // pthread_kill(bufferFillerThreadId, SIGUSR1);
+    // }
+    // for (int i = 0; i < workerThreadsNum; i++) {
+    //     printf("handleExit: i=%d\n", i);
+    //     // pthread_kill(threadIds[i], SIGUSR1);
+    //     pthread_cancel(threadIds[i]);
+    // }
+
     for (int i = 0; i < workerThreadsNum; i++) {
-        pthread_kill(threadIds[i], SIGUSR1);
+        pthread_mutex_lock(&cyclicBufferMutex);
+
+        while (cyclicBufferFull(&cyclicBuffer)) {
+            pthread_cond_wait(&cyclicBufferFullCond, &cyclicBufferMutex);
+        }
+        // printf("worker thread i: %d, 4\n", i);
+
+        // char cyclicBufferWasEmpty = cyclicBufferEmpty(&cyclicBuffer);
+
+        addNodeToCyclicBuffer(&cyclicBuffer, ",,", -1, -1, -1);
+        // printf("worker thread i: %d, 5\n", i);
+        // printf("buffer size while adding: %d\n", cyclicBuffer.curSize);
+
+        pthread_mutex_unlock(&cyclicBufferMutex);
+        // if (cyclicBufferWasEmpty) {
+        pthread_cond_signal(&cyclicBufferEmptyCond);
+    }
+
+    if (bufferFillerThreadCreated) {
+        // pthread_kill(bufferFillerThreadId, SIGUSR1);
+        pthread_cancel(bufferFillerThreadId);
     }
     if (bufferFillerThreadCreated) {
         pthread_join(bufferFillerThreadId, (void**)&retVal);
@@ -16,7 +42,12 @@ void handleExit(int exitNum) {
     }
 
     for (int i = 0; i < workerThreadsNum; i++) {
+        printf("2 handleExit: i=%d\n", i);
+
         pthread_join(threadIds[i], (void**)&retVal);
+        printf("2 handleExit: i=%d\n", i);
+        ;
+
         if (retVal == 1) {
             printf(ANSI_COLOR_RED "Worker thread with id %lu exited with an error" ANSI_COLOR_RESET "\n", threadIds[i]);
         }
@@ -123,10 +154,10 @@ void populateFileList(List* fileList, char* inputDirName, int indent) {
 
     // traverse the whole directory recursively
     while ((entry = readdir(dir)) != NULL) {
-        isEmpty = 0;
-
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
             continue;
+        else
+            isEmpty = 0;
 
         snprintf(path, PATH_MAX, "%s/%s", inputDirName, entry->d_name);  // append to inputDirName the current file's name
         stat(path, &curStat);
@@ -218,7 +249,9 @@ void buildClientName(char (*clientName)[], uint32_t ip, int portNum) {
     // char ipS[MAX_STRING_INT_SIZE], portNumS[MAX_STRING_INT_SIZE];
     // sprintf(ipS, "%u", ip);
     // sprintf(portNumS, "%d", portNum);
-    sprintf(*clientName, "%u_%d", ip, portNum);
+    struct in_addr ipStruct;
+    ipStruct.s_addr = ip;
+    sprintf(*clientName, "%s_%d", inet_ntoa(ipStruct), portNum);
 
     return;
 }
@@ -232,30 +265,30 @@ void handleSigIntMainThread(int signal) {
     handleExit(1);
 }
 
-void handleSigUsrSecondaryThread(int signal) {
-    if (signal != SIGUSR1) {
-        printErrorLn("Secondary thread caught wrong signal instead of SIGUSR1");
-    }
-    printf("Secondary thread caught SIGUSR1\n");
+// void handleSigUsrSecondaryThread(int signal) {
+//     if (signal != SIGUSR1) {
+//         printErrorLn("Secondary thread caught wrong signal instead of SIGUSR1");
+//     }
+//     printf("Secondary thread caught SIGUSR1\n");
 
-    pthread_exit((void**)0);
-}
+//     pthread_exit(NULL);
+// }
 
 void* bufferFillerThreadJob(void* a) {
-    struct sigaction sigAction;
-    // setup the sighub handler
-    sigAction.sa_handler = &handleSigUsrSecondaryThread;
+    // struct sigaction sigAction;
+    // // setup the sighub handler
+    // sigAction.sa_handler = &handleSigUsrSecondaryThread;
 
-    // restart the system call, if at all possible
-    sigAction.sa_flags = SA_RESTART;
+    // // restart the system call, if at all possible
+    // sigAction.sa_flags = SA_RESTART;
 
-    // add only SIGINT signal (SIGUSR1 and SIGUSR2 signals are handled by the client's forked subprocesses)
-    sigemptyset(&sigAction.sa_mask);
-    sigaddset(&sigAction.sa_mask, SIGUSR1);
+    // // add only SIGINT signal (SIGUSR1 and SIGUSR2 signals are handled by the client's forked subprocesses)
+    // sigemptyset(&sigAction.sa_mask);
+    // sigaddset(&sigAction.sa_mask, SIGUSR1);
 
-    if (sigaction(SIGUSR1, &sigAction, NULL) == -1) {
-        perror("Error: cannot handle SIGINT");  // Should not happen
-    }
+    // if (sigaction(SIGUSR1, &sigAction, NULL) == -1) {
+    //     perror("Error: cannot handle SIGINT");  // Should not happen
+    // }
 
     ////// store client infos in buffer
 
@@ -276,7 +309,11 @@ void* bufferFillerThreadJob(void* a) {
             // pthread_mutex_unlock(&cyclicBufferMutex);
             break;
         }
-        pthread_mutex_lock(&clientListMutex);
+
+        struct timespec timeout;
+        // clock_gettime(CLOCK_REALTIME, &timeoutTime);
+        timeout.tv_sec = 10;
+        pthread_mutex_timedlock(&clientListMutex, &timeout);
 
         curClientInfo = findNodeInList(clientsList, &nextClientPortNum, &nextClientIp);
 
@@ -313,24 +350,30 @@ void* bufferFillerThreadJob(void* a) {
 }
 
 void* workerThreadJob(void* id) {
-    struct sigaction sigAction;
-    // setup the sighub handler
-    sigAction.sa_handler = &handleSigUsrSecondaryThread;
+    // int oldState;
+    // pthread_setcancelstate(PTHREAD_CANCEL_ENABLE,&oldState);
+    // struct sigaction sigAction;
+    // // setup the sighub handler
+    // sigAction.sa_handler = &handleSigUsrSecondaryThread;
 
-    // restart the system call, if at all possible
-    sigAction.sa_flags = SA_RESTART;
+    // // restart the system call, if at all possible
+    // sigAction.sa_flags = SA_RESTART;
 
-    // add only SIGINT signal (SIGUSR1 and SIGUSR2 signals are handled by the client's forked subprocesses)
-    sigemptyset(&sigAction.sa_mask);
-    sigaddset(&sigAction.sa_mask, SIGUSR1);
+    // // add only SIGINT signal (SIGUSR1 and SIGUSR2 signals are handled by the client's forked subprocesses)
+    // sigemptyset(&sigAction.sa_mask);
+    // sigaddset(&sigAction.sa_mask, SIGUSR1);
 
-    if (sigaction(SIGUSR1, &sigAction, NULL) == -1) {
-        perror("Error: cannot handle SIGINT");  // Should not happen
-    }
+    // if (sigaction(SIGUSR1, &sigAction, NULL) == -1) {
+    //     perror("Error: cannot handle SIGINT");  // Should not happen
+    // }
 
     while (1) {
         printf("in worker thread: while1\n");
+        // struct timespec timeout;
+        // clock_gettime(CLOCK_REALTIME, &timeout);
+        // timeout.tv_sec += 10;
         pthread_mutex_lock(&cyclicBufferMutex);
+        // printf("timeouttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttttt->%ld\n", timeout.tv_sec);
         printf("buffer size: %d\n", cyclicBuffer.curSize);
 
         while (cyclicBufferEmpty(&cyclicBuffer)) {
@@ -348,21 +391,23 @@ void* workerThreadJob(void* id) {
 
         pthread_mutex_unlock(&cyclicBufferMutex);
 
-        // if (cyclicBufferWasFull) {
-        pthread_cond_signal(&cyclicBufferFullCond);
-        // }
-        printf("in worker thread: while4\n");
+        if (curBufferNode->portNumber != -1) {
+            // if (cyclicBufferWasFull) {
+            pthread_cond_signal(&cyclicBufferFullCond);
+            // }
+            printf("in worker thread: while4\n");
 
-        pthread_mutex_lock(&clientListMutex);
+            pthread_mutex_lock(&clientListMutex);
 
-        if (findNodeInList(clientsList, &curBufferNode->portNumber, &curBufferNode->ip) == NULL) {
-            printErrorLn("Client info invalid\n");
-            freeBufferNode(&curBufferNode);
-            continue;
+            if (findNodeInList(clientsList, &curBufferNode->portNumber, &curBufferNode->ip) == NULL) {
+                printErrorLn("Client info invalid\n");
+                freeBufferNode(&curBufferNode);
+                continue;
+            }
+            printf("in worker thread: while5\n");
+
+            pthread_mutex_unlock(&clientListMutex);
         }
-        printf("in worker thread: while5\n");
-
-        pthread_mutex_unlock(&clientListMutex);
 
         int curPeerSocketFd;
         struct sockaddr_in curPeerSocketAddr;
@@ -434,7 +479,7 @@ void* workerThreadJob(void* id) {
             printf("worker thread got all files\n");
             // freeBufferNode(&curBufferNode);
             close(curPeerSocketFd);
-        } else {  // file buffer node
+        } else if (strcmp(curBufferNode->filePath, ",,") != 0) {  // file buffer node
             printf("Worker thread hanlding file nodegggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg\n");
             char clientName[MAX_CLIENT_NAME_SIZE];
             buildClientName(&clientName, curBufferNode->ip, curBufferNode->portNumber);
@@ -548,6 +593,8 @@ void* workerThreadJob(void* id) {
             // trySend(selectedSocket, &curFile->contentsSize, 4);
 
             close(curPeerSocketFd);
+        } else {
+            pthread_exit((void**)0);
         }
         freeBufferNode(&curBufferNode);
     }
@@ -903,10 +950,10 @@ int main(int argc, char** argv) {
             curIp = ntohl(curIp);
             curPortNum = ntohs(curPortNum);
 
-            if (curIp != serverAddr.sin_addr.s_addr || curPortNum != serverPort) {
-                printErrorLn("Got USER_OFF message from a non-server application\n");
-                continue;
-            }
+            // if (curIp != serverAddr.sin_addr.s_addr || curPortNum != serverPort) {
+            //     printErrorLn("Got USER_OFF message from a non-server application\n");
+            //     continue;
+            // }
 
             pthread_mutex_lock(&clientListMutex);
             deleteNodeFromList(clientsList, &curPortNum, &curIp);

@@ -7,7 +7,8 @@
 
 #define MAX_CONNECTIONS 100
 #define FILE_CHUNK_SIZE 100
-#define MAX_CLIENT_NAME_SIZE 24
+#define MAX_CLIENT_NAME_SIZE 28 // format: 111.111.111.111_1234
+// #define MAX_IP_STRING_SIZE 16
 
 pthread_mutex_t cyclicBufferMutex = PTHREAD_MUTEX_INITIALIZER, clientListMutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cyclicBufferFullCond = PTHREAD_COND_INITIALIZER, cyclicBufferEmptyCond = PTHREAD_COND_INITIALIZER;
@@ -21,7 +22,7 @@ int serverSocketFd, workerThreadsNum;
 struct sockaddr_in serverAddr;
 struct in_addr localIpAddr;
 int portNum;
-char bufferFillerThreadCreated = 0;
+char bufferFillerThreadCreated = 0, threadsShouldExit = 0;
 
 List *clientsList, *filesList;
 CyclicBuffer cyclicBuffer;
