@@ -48,10 +48,28 @@ void createDir(char* dirPath) {
         exit(1);
     } else {
         wait(NULL);
-            printf("dir with name: %s created!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", dirPath);
+        printf("dir with name: %s created!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", dirPath);
     }
 
     return;
+}
+
+void _mkdir(const char* dir) {
+    char tmp[256];
+    char* p = NULL;
+    size_t len;
+
+    snprintf(tmp, sizeof(tmp), "%s", dir);
+    len = strlen(tmp);
+    if (tmp[len - 1] == '/')
+        tmp[len - 1] = 0;
+    for (p = tmp + 1; *p; p++)
+        if (*p == '/') {
+            *p = 0;
+            mkdir(tmp, S_IRWXU);
+            *p = '/';
+        }
+    mkdir(tmp, S_IRWXU);
 }
 
 void createAndWriteToFile(char* fileName, char* contents) {
@@ -77,6 +95,33 @@ void removeFileName(char* path) {
         *last = '\0';
 }
 
+struct in_addr getLocalIp() {
+    struct ifaddrs * ifAddrStruct=NULL;
+    struct ifaddrs * ifa=NULL;
+    void * tmpAddrPtr=NULL;
+
+    getifaddrs(&ifAddrStruct);
+
+    ifa = ifAddrStruct->ifa_next->ifa_next->ifa_next;
+    
+        if (ifa->ifa_addr->sa_family == AF_INET) { // check it is IP4
+            // is a valid IP4 Address
+            tmpAddrPtr=&((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+            char addressBuffer[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
+            printf("%s IP Address %s\n", ifa->ifa_name, addressBuffer); 
+        } else if (ifa->ifa_addr->sa_family == AF_INET6) { // check it is IP6
+            // is a valid IP6 Address
+            tmpAddrPtr=&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr;
+            char addressBuffer[INET6_ADDRSTRLEN];
+            inet_ntop(AF_INET6, tmpAddrPtr, addressBuffer, INET6_ADDRSTRLEN);
+            printf("%s IP Address %s\n", ifa->ifa_name, addressBuffer); 
+        } 
+    
+    if (ifAddrStruct!=NULL) freeifaddrs(ifAddrStruct);
+    return ((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+}
+
 int connectToPeer(int* socketFd, struct sockaddr_in* peerAddr) {
     if (((*socketFd) = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("Socket creation error");
@@ -89,8 +134,8 @@ int connectToPeer(int* socketFd, struct sockaddr_in* peerAddr) {
     // peerAddr->sin_port = htons(peerAddr->sin_port);
 
     while (connect((*socketFd), (struct sockaddr*)peerAddr, sizeof(*peerAddr)) < 0) {
-        perror("Socket connection failed");
-        printf("retrying...\n");
+        // perror("Socket connection failed");
+        // printf("retrying...\n");
         // return 1;
     }
     printf("Connected to port %d and ip %s\n", peerAddr->sin_port, inet_ntoa(peerAddr->sin_addr));

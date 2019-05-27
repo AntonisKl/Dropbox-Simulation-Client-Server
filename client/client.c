@@ -2,17 +2,20 @@
 
 void handleExit(int exitNum) {
     int retVal;
-    pthread_kill(bufferFillerThreadId, SIGUSR1);
-    for (int i = 0; i < sizeof(threadIds) / sizeof(pthread_t); i++) {
+    if (bufferFillerThreadCreated) {
+        pthread_kill(bufferFillerThreadId, SIGUSR1);
+    }
+    for (int i = 0; i < workerThreadsNum; i++) {
         pthread_kill(threadIds[i], SIGUSR1);
     }
-
-    pthread_join(bufferFillerThreadId, (void**)&retVal);
-    if (retVal == 1) {
-        printErrorLn("Buffer filler thread exited with an error");
+    if (bufferFillerThreadCreated) {
+        pthread_join(bufferFillerThreadId, (void**)&retVal);
+        if (retVal == 1) {
+            printErrorLn("Buffer filler thread exited with an error");
+        }
     }
 
-    for (int i = 0; i < sizeof(threadIds) / sizeof(pthread_t); i++) {
+    for (int i = 0; i < workerThreadsNum; i++) {
         pthread_join(threadIds[i], (void**)&retVal);
         if (retVal == 1) {
             printf(ANSI_COLOR_RED "Worker thread with id %lu exited with an error" ANSI_COLOR_RESET "\n", threadIds[i]);
@@ -20,6 +23,18 @@ void handleExit(int exitNum) {
     }
 
     tryInitAndSend(&serverSocketFd, LOG_OFF, MAX_MESSAGE_SIZE, MAIN_THREAD, &serverAddr, serverAddr.sin_port);  // send LOG_OFF to server
+                                                                                                                //     socklen_t localAddrLength = sizeof(localAddr);
+                                                                                                                // getsockname(serverSocketFd, (struct sockaddr*)&localAddr,
+                                                                                                                //                 &localAddrLength);
+
+    // struct in_addr myIpStructToSend = getLocalIp();
+    uint32_t myIpToSend = htonl(localIpAddr.s_addr);
+    int myPortToSend = htons(portNum);
+    printf("will send ip: %s, port: %d\n", inet_ntoa(localIpAddr), myPortToSend);
+    trySend(serverSocketFd, &myIpToSend, 4, MAIN_THREAD);
+    // printLn("after read 1");
+
+    trySend(serverSocketFd, &myPortToSend, 4, MAIN_THREAD);
 
     printf("exiting...\n");
     exit(exitNum);
@@ -149,9 +164,10 @@ void trySend(int socketFd, void* buffer, int bufferSize, CallingMode callingMode
 }
 
 void tryInitAndSend(int* socketFd, void* buffer, int bufferSize, CallingMode callingMode, struct sockaddr_in* addr, int portNum) {
+    printf("haaaaaaaaaaaaaaaaaaaaaaaaaaaiiiii\n");
+
     addr->sin_family = AF_INET;
     addr->sin_port = portNum;
-
     if (connectToPeer(socketFd, addr) == 1) {
         if (callingMode == MAIN_THREAD)
             handleExit(1);
@@ -222,7 +238,7 @@ void handleSigUsrSecondaryThread(int signal) {
     }
     printf("Secondary thread caught SIGUSR1\n");
 
-    pthread_exit((void**)1);
+    pthread_exit((void**)0);
 }
 
 void* bufferFillerThreadJob(void* a) {
@@ -465,7 +481,7 @@ void* workerThreadJob(void* id) {
                 tryRead(curPeerSocketFd, &contentsSize, 4, SECONDARY_THREAD);
 
                 if (contentsSize == -1) {  // is a directory
-                    createDir(filePath);
+                    _mkdir(filePath);
                     close(curPeerSocketFd);
                     continue;
                 } else if (contentsSize == 0) {  // is an empty file
@@ -474,7 +490,7 @@ void* workerThreadJob(void* id) {
                     removeFileName(tempFilePath);
                     // printf("file path: %s\n", tempFilePath);
                     if (!dirExists(tempFilePath)) {
-                        createDir(tempFilePath);
+                        _mkdir(tempFilePath);
                     }
                     printf("file path: %s\n", filePath);
                     createAndWriteToFile(filePath, "");
@@ -521,7 +537,7 @@ void* workerThreadJob(void* id) {
                 removeFileName(tempFilePath);
                 // printf("file path: %s\n", tempFilePath);
                 if (!dirExists(tempFilePath)) {
-                    createDir(tempFilePath);
+                    _mkdir(tempFilePath);
                 }
                 printf("file path: %s\n", filePath);
 
@@ -556,7 +572,7 @@ int main(int argc, char** argv) {
     }
 
     char* dirName;
-    int portNum, workerThreadsNum, bufferSize, serverPort, mySocketFd;
+    int bufferSize, serverPort, mySocketFd;
     struct sockaddr_in myAddr;
 
     handleArgs(argc, argv, &dirName, &portNum, &workerThreadsNum, &bufferSize, &serverPort, &serverAddr);
@@ -569,17 +585,15 @@ int main(int argc, char** argv) {
     }
     printLn("Connected to server");
 
-    struct sockaddr_in localAddr;
-    socklen_t localAddrLength = sizeof(localAddr);
-    getsockname(serverSocketFd, (struct sockaddr*)&localAddr,
-                &localAddrLength);
-    printf("local address: %s\n", inet_ntoa(localAddr.sin_addr));
+    // socklen_t localAddrLength = sizeof(localAddr);
+    localIpAddr = getLocalIp();
+    printf("local address: %s\n", inet_ntoa(localIpAddr));
 
     // if (send(serverSocketFd, LOG_ON, MAX_MESSAGE_SIZE, 0) == -1) {  // send LOG_ON to server
     //     perror("Send error");
     //     handleExit(1);
     // }
-    uint32_t myIpToSend = htonl(localAddr.sin_addr.s_addr);
+    uint32_t myIpToSend = htonl(localIpAddr.s_addr);
     int myPortToSend = htons(portNum);
 
     trySend(serverSocketFd, LOG_ON, MAX_MESSAGE_SIZE, MAIN_THREAD);
@@ -630,8 +644,7 @@ int main(int argc, char** argv) {
         receivedPortNum = ntohs(receivedPortNum);
 
         printf("ip1: %s, port1: %d\n", inet_ntoa(receivedIpStruct), receivedPortNum);
-        if (receivedIpStruct.s_addr != localAddr.sin_addr.s_addr || receivedPortNum != portNum)
-
+        if (receivedIpStruct.s_addr != localIpAddr.s_addr || receivedPortNum != portNum)
             addNodeToList(clientsList, initClientInfo(receivedIpStruct, receivedPortNum));
     }
 
@@ -664,6 +677,7 @@ int main(int argc, char** argv) {
     printf("1\n");
     if (clientsInserted < clientsList->size) {
         pthread_create(&bufferFillerThreadId, NULL, bufferFillerThreadJob, NULL);  // 3rd arg is the function which I will add, 4th arg is the void* arg of the function
+        bufferFillerThreadCreated = 1;
         printLn("Created buffer filler thread cause clients were too much");
     }
     printf("2\n");

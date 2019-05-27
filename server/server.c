@@ -170,7 +170,9 @@ int main(int argc, char** argv) {
             curIpStruct.s_addr = ntohl(curIpStruct.s_addr);
             curPortNum = ntohs(curPortNum);
 
-            if (deleteNodeFromList(clientsList, &incomingAddr.sin_port, &incomingAddr.sin_addr.s_addr) == -1) {
+            printf("Got ip: %s, port: %d\n",inet_ntoa( curIpStruct), curPortNum);
+
+            if (deleteNodeFromList(clientsList, &curPortNum, &curIpStruct.s_addr) == -1) {
                 trySend(newSocketFd, ERROR_IP_PORT_NOT_FOUND_IN_LIST, MAX_MESSAGE_SIZE, MAIN_THREAD);
                 continue;
             }

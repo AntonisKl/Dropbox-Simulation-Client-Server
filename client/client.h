@@ -1,9 +1,9 @@
 #ifndef CLIENT_H
 #define CLIENT_H
 
-#include "../utils/utils.h"
-#include "../list/list.h"
 #include "../cyclic_buffer/cyclic_buffer.h"
+#include "../list/list.h"
+#include "../utils/utils.h"
 
 #define MAX_CONNECTIONS 100
 #define FILE_CHUNK_SIZE 100
@@ -17,8 +17,11 @@ pthread_t* threadIds;
 
 // typedef struct CyclicBuffer CyclicBuffer;
 
-int serverSocketFd;
+int serverSocketFd, workerThreadsNum;
 struct sockaddr_in serverAddr;
+struct in_addr localIpAddr;
+int portNum;
+char bufferFillerThreadCreated = 0;
 
 List *clientsList, *filesList;
 CyclicBuffer cyclicBuffer;

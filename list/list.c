@@ -217,15 +217,17 @@ int deleteNodeFromList(List* list, void* searchValue1, void* searchValue2) {
         if (list->mode == FILES) {
             printf("File with name %s not found in names' list\n", (char*)searchValue1);
         } else {
-            printf("Client info of client with ip %u and port %d not found in names' list\n", *(uint32_t*)searchValue1, *(int*)searchValue2);
+            printf("Client info of client with port %d and ip %u not found in names' list\n", *(int*)searchValue1, *(uint32_t*)searchValue2);
         }
         return -1;
     }
-
-    if (list->mode == FILES ? strcmp(((File*)nodeToDelete)->path, ((File*)list->firstNode)->path) == 0
-                            : ((ClientInfo*)list->firstNode)->portNumber == ((int)(((ClientInfo*)nodeToDelete)->portNumber) &&
+    // printf("nodetodelete ip: %u, port: %d, first node ip: %u, port: %d\n",((struct in_addr)((ClientInfo*)nodeToDelete)->ipStruct).s_addr, (int)((ClientInfo*)nodeToDelete)->portNumber,  ( (struct in_addr)((ClientInfo*)list->firstNode)->ipStruct).s_addr,((ClientInfo*)list->firstNode)->portNumber );
+    if ((list->mode == FILES && strcmp(((File*)nodeToDelete)->path, ((File*)list->firstNode)->path) == 0)
+                            || (list->mode == CLIENTS && ((ClientInfo*)list->firstNode)->portNumber == ((ClientInfo*)nodeToDelete)->portNumber &&
                                                                              ((struct in_addr)((ClientInfo*)list->firstNode)->ipStruct).s_addr == ((struct in_addr)((ClientInfo*)nodeToDelete)->ipStruct).s_addr)) {
-        list->firstNode = list->mode == FILES ? (void*)((File*)nodeToDelete)->nextFile : (void*)((ClientInfo*)nodeToDelete)->nextClientInfo;
+                                                                                        //  printf("hey\n");
+
+        list->firstNode = (list->mode == FILES ? (void*)((File*)nodeToDelete)->nextFile : (void*)((ClientInfo*)nodeToDelete)->nextClientInfo);
     }
     if (list->mode == FILES ? ((File*)nodeToDelete)->prevFile != NULL : ((ClientInfo*)nodeToDelete)->prevClientInfo != NULL) {
         // nodeToDelete->prevNode->nextNode = nodeToDelete->nextNode;
@@ -234,6 +236,7 @@ int deleteNodeFromList(List* list, void* searchValue1, void* searchValue2) {
         } else {
             ((ClientInfo*)nodeToDelete)->prevClientInfo->nextClientInfo = ((ClientInfo*)nodeToDelete)->nextClientInfo;
         }
+        // printf("ha\n");
     }
     if (list->mode == FILES ? ((File*)nodeToDelete)->nextFile != NULL : ((ClientInfo*)nodeToDelete)->nextClientInfo != NULL) {
         // nodeToDelete->nextNode->prevNode = nodeToDelete->prevNode;
@@ -242,12 +245,15 @@ int deleteNodeFromList(List* list, void* searchValue1, void* searchValue2) {
         } else {
             ((ClientInfo*)nodeToDelete)->nextClientInfo->prevClientInfo = ((ClientInfo*)nodeToDelete)->prevClientInfo;
         }
+            // printf("hi\n");
+
     }
 
     if (list->mode == FILES) {
         freeFile((File**)&nodeToDelete);
     } else {
         freeClientInfo((ClientInfo**)&nodeToDelete);
+                // printf("deleted client\n");
     }
 
     list->size--;
