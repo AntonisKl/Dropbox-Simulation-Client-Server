@@ -47,6 +47,6 @@ void handleSigIntMainThread(int signal);
 void handleSigIntSecondaryThread(int signal);
 
 void* bufferFillerThreadJob(void* a);
-void* workerThreadJob(void* a);
+void* workerThreadJob(void* id);
 
 #endif

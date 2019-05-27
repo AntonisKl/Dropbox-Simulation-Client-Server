@@ -21,6 +21,7 @@ void handleExit(int exitNum) {
 
     tryInitAndSend(&serverSocketFd, LOG_OFF, MAX_MESSAGE_SIZE, MAIN_THREAD, &serverAddr, serverAddr.sin_port);  // send LOG_OFF to server
 
+    printf("exiting...\n");
     exit(exitNum);
 }
 
@@ -120,7 +121,7 @@ void populateFileList(List* fileList, char* inputDirName, int indent) {
             populateFileList(fileList, path, indent + 2);  // continue traversing directory
         } else {                                           // is a file
             printf("file: %s\n", path);
-            addNodeToList(fileList, initFile(path, -1, curStat.st_size));  // add a REGULAR_FILE node to FileList
+            addNodeToList(fileList, initFile(path, curStat.st_size, curStat.st_mtime));  // add a REGULAR_FILE node to FileList
         }
     }
 
@@ -295,7 +296,7 @@ void* bufferFillerThreadJob(void* a) {
     pthread_exit((void**)0);
 }
 
-void* workerThreadJob(void* a) {
+void* workerThreadJob(void* id) {
     struct sigaction sigAction;
     // setup the sighub handler
     sigAction.sa_handler = &handleSigUsrSecondaryThread;
@@ -314,6 +315,7 @@ void* workerThreadJob(void* a) {
     while (1) {
         printf("in worker thread: while1\n");
         pthread_mutex_lock(&cyclicBufferMutex);
+        printf("buffer size: %d\n", cyclicBuffer.curSize);
 
         while (cyclicBufferEmpty(&cyclicBuffer)) {
             pthread_cond_wait(&cyclicBufferEmptyCond, &cyclicBufferMutex);
@@ -326,7 +328,7 @@ void* workerThreadJob(void* a) {
         // }
 
         BufferNode* curBufferNode = getNodeFromCyclicBuffer(&cyclicBuffer);
-        printf("in worker thread: while3\n");
+        printf("in worker thread with id %ld: while3 ========================================================\n", *(long int*)id);
 
         pthread_mutex_unlock(&cyclicBufferMutex);
 
@@ -350,7 +352,7 @@ void* workerThreadJob(void* a) {
         struct sockaddr_in curPeerSocketAddr;
         curPeerSocketAddr.sin_family = AF_INET;
         curPeerSocketAddr.sin_port = curBufferNode->portNumber;
-        curPeerSocketAddr.sin_addr.s_addr =curBufferNode->ip;
+        curPeerSocketAddr.sin_addr.s_addr = curBufferNode->ip;
 
         short int filePathSize;
         time_t version;
@@ -365,30 +367,44 @@ void* workerThreadJob(void* a) {
 
             trySend(curPeerSocketFd, GET_FILE_LIST, MAX_MESSAGE_SIZE, SECONDARY_THREAD);
 
+            char message[MAX_MESSAGE_SIZE];
+            tryRead(curPeerSocketFd, message, MAX_MESSAGE_SIZE, SECONDARY_THREAD);
+            printf("worker thread --> got message: %s\n", message);
+
             unsigned int totalFilesNum;
             tryRead(curPeerSocketFd, &totalFilesNum, 4, SECONDARY_THREAD);
+            printf("worker thread --> total files num: %u\n", totalFilesNum);
 
             char* pathNoInputDirName;
 
             for (int i = 0; i < totalFilesNum; i++) {
+                printf("worker thread i: %d\n", i);
                 tryRead(curPeerSocketFd, &filePathSize, 2, SECONDARY_THREAD);
+                printf("worker thread i: %d ------------------------------> file path size: %d\n", i, filePathSize);
 
                 pathNoInputDirName = (char*)malloc(filePathSize + 1);
-                tryRead(curPeerSocketFd, &pathNoInputDirName, filePathSize, SECONDARY_THREAD);
+                memset(pathNoInputDirName, 0, filePathSize + 1);  // clear file path
+
+                tryRead(curPeerSocketFd, pathNoInputDirName, filePathSize, SECONDARY_THREAD);
+                printf("worker thread i: %d ------------------------------> path: %s\n", i, pathNoInputDirName);
 
                 tryRead(curPeerSocketFd, &version, 8, SECONDARY_THREAD);
+                printf("worker thread i: %d ------------------------------> version: %ld\n", i, version);
 
                 pthread_mutex_lock(&cyclicBufferMutex);
 
                 while (cyclicBufferFull(&cyclicBuffer)) {
                     pthread_cond_wait(&cyclicBufferFullCond, &cyclicBufferMutex);
                 }
+                printf("worker thread i: %d, 4\n", i);
+
                 // char cyclicBufferWasEmpty = cyclicBufferEmpty(&cyclicBuffer);
 
                 addNodeToCyclicBuffer(&cyclicBuffer, pathNoInputDirName, version, curBufferNode->ip, curBufferNode->portNumber);
+                printf("worker thread i: %d, 5\n", i);
+                printf("buffer size while adding: %d\n", cyclicBuffer.curSize);
 
                 pthread_mutex_unlock(&cyclicBufferMutex);
-
                 // if (cyclicBufferWasEmpty) {
                 pthread_cond_signal(&cyclicBufferEmptyCond);
                 // }
@@ -399,11 +415,11 @@ void* workerThreadJob(void* a) {
                     pathNoInputDirName = NULL;
                 }
             }
-
+            printf("worker thread got all files\n");
             // freeBufferNode(&curBufferNode);
             close(curPeerSocketFd);
         } else {  // file buffer node
-            printf("Worker thread hanlding file node\n");
+            printf("Worker thread hanlding file nodegggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg\n");
             char clientName[MAX_CLIENT_NAME_SIZE];
             buildClientName(&clientName, curBufferNode->ip, curBufferNode->portNumber);
 
@@ -412,8 +428,10 @@ void* workerThreadJob(void* a) {
 
             if (connectToPeer(&curPeerSocketFd, &curPeerSocketAddr) == 1)
                 pthread_exit((void**)-1);
+            printf("Worker thread hanlding file node///////////////////////////////////////////////////\n");
 
             trySend(curPeerSocketFd, GET_FILE, MAX_MESSAGE_SIZE, SECONDARY_THREAD);
+            printf("Worker thread hanlding file node///////////////////////////////////////////////////11111111\n");
 
             filePathSize = strlen(curBufferNode->filePath);
             trySend(curPeerSocketFd, &filePathSize, 2, SECONDARY_THREAD);
@@ -427,18 +445,21 @@ void* workerThreadJob(void* a) {
             }
 
             trySend(curPeerSocketFd, &version, 8, SECONDARY_THREAD);
+
             char incomingMessage[MAX_MESSAGE_SIZE];
             tryRead(curPeerSocketFd, incomingMessage, MAX_MESSAGE_SIZE, SECONDARY_THREAD);
+            printf("worker thread .................................... message received: %s\n", incomingMessage);
             if (strcmp(incomingMessage, FILE_SIZE) == 0) {
                 int incomingVersion;
                 tryRead(curPeerSocketFd, &incomingVersion, 8, SECONDARY_THREAD);
 
-                File* foundFile = findNodeInList(filesList, curBufferNode->filePath, NULL);
-                if (foundFile == NULL) {
-                    printErrorLn("Something's wrong");
-                } else {
-                    foundFile->version = incomingVersion;
-                }
+                printf("cur buffer file path*************************************************: %s\n", curBufferNode->filePath);
+                // File* foundFile = findNodeInList(filesList, curBufferNode->filePath, NULL);
+                // if (foundFile == NULL) {
+                //     printErrorLn("Something's wrong");
+                // } else {
+                //     foundFile->version = incomingVersion;
+                // }
 
                 int contentsSize;
                 tryRead(curPeerSocketFd, &contentsSize, 4, SECONDARY_THREAD);
@@ -448,6 +469,14 @@ void* workerThreadJob(void* a) {
                     close(curPeerSocketFd);
                     continue;
                 } else if (contentsSize == 0) {  // is an empty file
+                    char tempFilePath[strlen(filePath) + 1];
+                    strcpy(tempFilePath, filePath);
+                    removeFileName(tempFilePath);
+                    // printf("file path: %s\n", tempFilePath);
+                    if (!dirExists(tempFilePath)) {
+                        createDir(tempFilePath);
+                    }
+                    printf("file path: %s\n", filePath);
                     createAndWriteToFile(filePath, "");
                     close(curPeerSocketFd);
                     continue;
@@ -486,6 +515,15 @@ void* workerThreadJob(void* a) {
 
                 // char mirrorFilePath[strlen(mirrorIdDirPath) + strlen(filePath) + 2];  // mirrorFilePath: the path of the mirrored file
                 // sprintf(mirrorFilePath, "%s/%s", mirrorIdDirPath, filePath);           // format: [mirrorDir]/[id]/[filePath]
+
+                char tempFilePath[strlen(filePath) + 1];
+                strcpy(tempFilePath, filePath);
+                removeFileName(tempFilePath);
+                // printf("file path: %s\n", tempFilePath);
+                if (!dirExists(tempFilePath)) {
+                    createDir(tempFilePath);
+                }
+                printf("file path: %s\n", filePath);
 
                 createAndWriteToFile(filePath, contents);
             }
@@ -635,7 +673,7 @@ int main(int argc, char** argv) {
     printf("worker threads num: %d\n", workerThreadsNum);
     for (int i = 0; i < workerThreadsNum; i++) {
         printf("i: %d\n", i);
-        pthread_create(&threadIds[i], NULL, workerThreadJob, NULL);  // 3rd arg is the function which I will add, 4th arg is the void* arg of the function
+        pthread_create(&threadIds[i], NULL, workerThreadJob, &threadIds[i]);  // 3rd arg is the function which I will add, 4th arg is the void* arg of the function
     }
 
     printLn("Created worker threads");
@@ -664,7 +702,7 @@ int main(int argc, char** argv) {
         handleExit(1);
     }
 
-    printLn("Created a server to accept incoming client connections");
+    printLn("Created server to accept incoming connections");
 
     int newSocketFd, selectedSocket;
     struct sockaddr_in incomingAddr;
@@ -683,11 +721,11 @@ int main(int argc, char** argv) {
         //     handleExit(1);
         // }
 
-        if (selectedSocket == newSocketFd) {
-            ClientInfo* foundClientInfo = findNodeInList(clientsList, &incomingAddr.sin_port, &incomingAddr.sin_addr.s_addr);
-            if (foundClientInfo == NULL)  // ignore incoming client
-                continue;
-        }
+        // if (selectedSocket == newSocketFd) {
+        //     ClientInfo* foundClientInfo = findNodeInList(clientsList, &incomingAddr.sin_port, &incomingAddr.sin_addr.s_addr);
+        //     if (foundClientInfo == NULL)  // ignore incoming client
+        //         continue;
+        // }
         selectedSocket = newSocketFd;
         // char* message = malloc(MAX_MESSAGE_SIZE);
         // memset(message, 0, MAX_MESSAGE_SIZE);
@@ -695,9 +733,15 @@ int main(int argc, char** argv) {
 
         if (strcmp(message, GET_FILE_LIST) == 0) {
             printLn("Got GET_FILE_LIST message");
+            printf("111\n");
 
             trySend(selectedSocket, FILE_LIST, MAX_MESSAGE_SIZE, MAIN_THREAD);
+            printf("111.5\n");
+
             trySend(selectedSocket, &filesList->size, 4, MAIN_THREAD);
+            printf("will send file list size: %u\n", filesList->size);
+
+            printf("222\n");
 
             File* curFile = filesList->firstNode;
             while (curFile != NULL) {
@@ -708,16 +752,19 @@ int main(int argc, char** argv) {
                 pathNoInputDirName = strtok(NULL, "\n");                  // until end of path
 
                 short int filePathSize = strlen(pathNoInputDirName);
-
+                printf("will send file path size: %d\n", filePathSize);
                 trySend(selectedSocket, &filePathSize, 2, MAIN_THREAD);  // short int
 
-                trySend(selectedSocket, pathNoInputDirName, filePathSize, MAIN_THREAD);
+                printf("will send path: %s\n", pathNoInputDirName);
 
-                trySend(selectedSocket, &curFile->version, sizeof(long int), MAIN_THREAD);
+                trySend(selectedSocket, pathNoInputDirName, filePathSize, MAIN_THREAD);
+                printf("will send version: %ld\n", curFile->version);
+
+                trySend(selectedSocket, &curFile->version, 8, MAIN_THREAD);
 
                 curFile = curFile->nextFile;
             }
-
+            printf("handled all files\n");
             close(selectedSocket);
         } else if (strcmp(message, GET_FILE) == 0) {
             printLn("Got GET_FILE message");
@@ -726,12 +773,21 @@ int main(int argc, char** argv) {
             short int curFilePathSize;
 
             tryRead(selectedSocket, &curFilePathSize, 2, MAIN_THREAD);
-            tryRead(selectedSocket, &curFilePathNoInputDirName, curFilePathSize, MAIN_THREAD);
+
+            curFilePathNoInputDirName = (char*)malloc(curFilePathSize + 1);
+            memset(curFilePathNoInputDirName, 0, curFilePathSize + 1);
+
+            tryRead(selectedSocket, curFilePathNoInputDirName, curFilePathSize, MAIN_THREAD);
             tryRead(selectedSocket, &curFileVersion, 8, MAIN_THREAD);
 
             char curFilePath[strlen(dirName) + curFilePathSize];
             // strcpy(curFilePath, dirName);
             sprintf(curFilePath, "%s/%s", dirName, curFilePathNoInputDirName);
+
+            if (curFilePathNoInputDirName != NULL) {
+                free(curFilePathNoInputDirName);
+                curFilePathNoInputDirName = NULL;
+            }
 
             // if (!fileExists(curFilePath)) {
             //     trySend(newSocketFd, FILE_NOT_FOUND, MAX_MESSAGE_SIZE);

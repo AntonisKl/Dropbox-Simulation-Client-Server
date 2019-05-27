@@ -60,9 +60,13 @@ void printLn(char* s);
 
 char fileExists(char* fileName);
 
+char dirExists(char* dirName);
+
 void createDir(char* dirPath);
 
 void createAndWriteToFile(char* fileName, char* contents);
+
+void removeFileName(char *path);
 
 int connectToPeer(int* socketFd, struct sockaddr_in* peerAddr);
 

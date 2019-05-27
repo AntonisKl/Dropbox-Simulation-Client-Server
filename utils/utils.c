@@ -22,6 +22,19 @@ char fileExists(char* fileName) {
     return 0;
 }
 
+char dirExists(char* dirName) {
+    char returnValue = 0;
+    DIR* dir = opendir(dirName);
+    if (dir) {
+        // directory exists
+        returnValue = 1;
+        closedir(dir);
+    }
+
+    // directory does not exist
+    return returnValue;
+}
+
 void createDir(char* dirPath) {
     int pid = fork();
     if (pid == 0) {
@@ -35,6 +48,7 @@ void createDir(char* dirPath) {
         exit(1);
     } else {
         wait(NULL);
+            printf("dir with name: %s created!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", dirPath);
     }
 
     return;
@@ -57,6 +71,12 @@ void createAndWriteToFile(char* fileName, char* contents) {
     return;
 }
 
+void removeFileName(char* path) {
+    char* const last = strrchr(path, '/');
+    if (last != NULL)
+        *last = '\0';
+}
+
 int connectToPeer(int* socketFd, struct sockaddr_in* peerAddr) {
     if (((*socketFd) = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("Socket creation error");
@@ -68,9 +88,10 @@ int connectToPeer(int* socketFd, struct sockaddr_in* peerAddr) {
     // peerAddr->sin_addr.s_addr = htonl(peerAddr->sin_addr.s_addr);
     // peerAddr->sin_port = htons(peerAddr->sin_port);
 
-    if (connect((*socketFd), (struct sockaddr*)peerAddr, sizeof(*peerAddr)) < 0) {
+    while (connect((*socketFd), (struct sockaddr*)peerAddr, sizeof(*peerAddr)) < 0) {
         perror("Socket connection failed");
-        return 1;
+        printf("retrying...\n");
+        // return 1;
     }
     printf("Connected to port %d and ip %s\n", peerAddr->sin_port, inet_ntoa(peerAddr->sin_addr));
 
