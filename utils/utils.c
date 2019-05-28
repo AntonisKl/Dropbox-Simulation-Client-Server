@@ -96,30 +96,30 @@ void removeFileName(char* path) {
 }
 
 struct in_addr getLocalIp() {
-    struct ifaddrs * ifAddrStruct=NULL;
-    struct ifaddrs * ifa=NULL;
-    void * tmpAddrPtr=NULL;
+    struct ifaddrs* ifAddrStruct = NULL;
+    struct ifaddrs* ifa = NULL;
+    void* tmpAddrPtr = NULL;
 
     getifaddrs(&ifAddrStruct);
 
     ifa = ifAddrStruct->ifa_next->ifa_next->ifa_next;
-    
-        if (ifa->ifa_addr->sa_family == AF_INET) { // check it is IP4
-            // is a valid IP4 Address
-            tmpAddrPtr=&((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
-            char addressBuffer[INET_ADDRSTRLEN];
-            inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
-            printf("%s IP Address %s\n", ifa->ifa_name, addressBuffer); 
-        } else if (ifa->ifa_addr->sa_family == AF_INET6) { // check it is IP6
-            // is a valid IP6 Address
-            tmpAddrPtr=&((struct sockaddr_in6 *)ifa->ifa_addr)->sin6_addr;
-            char addressBuffer[INET6_ADDRSTRLEN];
-            inet_ntop(AF_INET6, tmpAddrPtr, addressBuffer, INET6_ADDRSTRLEN);
-            printf("%s IP Address %s\n", ifa->ifa_name, addressBuffer); 
-        } 
-    
-    if (ifAddrStruct!=NULL) freeifaddrs(ifAddrStruct);
-    return ((struct sockaddr_in *)ifa->ifa_addr)->sin_addr;
+
+    if (ifa->ifa_addr->sa_family == AF_INET) {  // check it is IP4
+        // is a valid IP4 Address
+        tmpAddrPtr = &((struct sockaddr_in*)ifa->ifa_addr)->sin_addr;
+        char addressBuffer[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
+        printf("%s IP Address %s\n", ifa->ifa_name, addressBuffer);
+    } else if (ifa->ifa_addr->sa_family == AF_INET6) {  // check it is IP6
+        // is a valid IP6 Address
+        tmpAddrPtr = &((struct sockaddr_in6*)ifa->ifa_addr)->sin6_addr;
+        char addressBuffer[INET6_ADDRSTRLEN];
+        inet_ntop(AF_INET6, tmpAddrPtr, addressBuffer, INET6_ADDRSTRLEN);
+        printf("%s IP Address %s\n", ifa->ifa_name, addressBuffer);
+    }
+
+    if (ifAddrStruct != NULL) freeifaddrs(ifAddrStruct);
+    return ((struct sockaddr_in*)ifa->ifa_addr)->sin_addr;
 }
 
 int connectToPeer(int* socketFd, struct sockaddr_in* peerAddr) {
@@ -132,15 +132,25 @@ int connectToPeer(int* socketFd, struct sockaddr_in* peerAddr) {
     // serverAddr.sin_port = htons(serverPort);
     // peerAddr->sin_addr.s_addr = htonl(peerAddr->sin_addr.s_addr);
     // peerAddr->sin_port = htons(peerAddr->sin_port);
-
+    int attempts = 1;
+    char connected = 1;
     while (connect((*socketFd), (struct sockaddr*)peerAddr, sizeof(*peerAddr)) < 0) {
-        // perror("Socket connection failed");
-        // printf("retrying...\n");
+        perror("Socket connection failed");
+        printf("Attempt: %d, retrying...\n", attempts);
+        attempts++;
+        if (attempts == (MAX_CONNECT_ATTEMPTS) + 1) {
+            connected = 0;
+            break;
+        }
         // return 1;
+        sleep(1);
     }
-    printf("Connected to port %d and ip %s\n", peerAddr->sin_port, inet_ntoa(peerAddr->sin_addr));
 
-    return 0;
+    if (connected) {
+        printf("Connected to port %d and ip %s\n", peerAddr->sin_port, inet_ntoa(peerAddr->sin_addr));
+        return 0;
+    } else
+        return 1;
 }
 
 int createServer(int* socketFd, struct sockaddr_in* socketAddr, int portNum, int maxConnectionsNum) {
@@ -159,9 +169,9 @@ int createServer(int* socketFd, struct sockaddr_in* socketAddr, int portNum, int
     //     exit(EXIT_FAILURE);
     // }
     // memset(&socketAddr, 0, sizeof(socketAddr));
-
     socketAddr->sin_family = AF_INET;
-    socketAddr->sin_addr.s_addr = INADDR_ANY;
+    socketAddr->sin_addr = getLocalIp();
+    ;
     socketAddr->sin_port = portNum;
 
     if (bind(*socketFd, (struct sockaddr*)socketAddr,

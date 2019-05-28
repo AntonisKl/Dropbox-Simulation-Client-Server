@@ -10,8 +10,12 @@ void handleExit(int exitNum) {
     //     // pthread_kill(threadIds[i], SIGUSR1);
     //     pthread_cancel(threadIds[i]);
     // }
+    close(mySocketFd);
 
     for (int i = 0; i < workerThreadsNum; i++) {
+        if (threadsRunning == NULL || !threadsRunning[i])
+            continue;
+
         pthread_mutex_lock(&cyclicBufferMutex);
 
         while (cyclicBufferFull(&cyclicBuffer)) {
@@ -41,31 +45,43 @@ void handleExit(int exitNum) {
         }
     }
 
-    for (int i = 0; i < workerThreadsNum; i++) {
-        printf("2 handleExit: i=%d\n", i);
+    if (threadIds != NULL) {
+        for (int i = 0; i < workerThreadsNum; i++) {
+            // if (!threadsRunning[i])
+            //     continue;
+            printf("2 handleExit: i=%d\n", i);
 
-        pthread_join(threadIds[i], (void**)&retVal);
-        printf("2 handleExit: i=%d\n", i);
-        ;
+            pthread_join(threadIds[i], (void**)&retVal);
+            printf("2 handleExit: i=%d\n", i);
 
-        if (retVal == 1) {
-            printf(ANSI_COLOR_RED "Worker thread with id %lu exited with an error" ANSI_COLOR_RESET "\n", threadIds[i]);
+            if (retVal == 1) {
+                printf(ANSI_COLOR_RED "Worker thread with id %lu exited with an error" ANSI_COLOR_RESET "\n", threadIds[i]);
+            }
         }
     }
+    close(serverSocketFd);
 
-    tryInitAndSend(&serverSocketFd, LOG_OFF, MAX_MESSAGE_SIZE, MAIN_THREAD, &serverAddr, serverAddr.sin_port);  // send LOG_OFF to server
-                                                                                                                //     socklen_t localAddrLength = sizeof(localAddr);
-                                                                                                                // getsockname(serverSocketFd, (struct sockaddr*)&localAddr,
-                                                                                                                //                 &localAddrLength);
+    if (connectToPeer(&serverSocketFd, &serverAddr) == 0) {
+        trySend(serverSocketFd, LOG_OFF, MAX_MESSAGE_SIZE, MAIN_THREAD);  // send LOG_OFF to server
+        uint32_t myIpToSend = htonl(localIpAddr.s_addr);
+        int myPortToSend = htons(portNum);
+        printf("will send ip: %s, port: %d\n", inet_ntoa(localIpAddr), myPortToSend);
+        trySend(serverSocketFd, &myIpToSend, 4, MAIN_THREAD);
+        // printLn("after read 1");
+
+        trySend(serverSocketFd, &myPortToSend, 4, MAIN_THREAD);
+    }
+
+    //     socklen_t localAddrLength = sizeof(localAddr);
+    // getsockname(serverSocketFd, (struct sockaddr*)&localAddr,
+    //                 &localAddrLength);
 
     // struct in_addr myIpStructToSend = getLocalIp();
-    uint32_t myIpToSend = htonl(localIpAddr.s_addr);
-    int myPortToSend = htons(portNum);
-    printf("will send ip: %s, port: %d\n", inet_ntoa(localIpAddr), myPortToSend);
-    trySend(serverSocketFd, &myIpToSend, 4, MAIN_THREAD);
-    // printLn("after read 1");
 
-    trySend(serverSocketFd, &myPortToSend, 4, MAIN_THREAD);
+    free(threadIds);
+    threadIds = NULL;
+
+    close(serverSocketFd);
 
     printf("exiting...\n");
     exit(exitNum);
@@ -349,7 +365,7 @@ void* bufferFillerThreadJob(void* a) {
     pthread_exit((void**)0);
 }
 
-void* workerThreadJob(void* id) {
+void* workerThreadJob(void* index) {
     // int oldState;
     // pthread_setcancelstate(PTHREAD_CANCEL_ENABLE,&oldState);
     // struct sigaction sigAction;
@@ -366,6 +382,8 @@ void* workerThreadJob(void* id) {
     // if (sigaction(SIGUSR1, &sigAction, NULL) == -1) {
     //     perror("Error: cannot handle SIGINT");  // Should not happen
     // }
+
+    threadsRunning[*(int*)index] = 1;
 
     while (1) {
         printf("in worker thread: while1\n");
@@ -387,7 +405,7 @@ void* workerThreadJob(void* id) {
         // }
 
         BufferNode* curBufferNode = getNodeFromCyclicBuffer(&cyclicBuffer);
-        printf("in worker thread with id %ld: while3 ========================================================\n", *(long int*)id);
+        // printf("in worker thread with id %ld: while3 ========================================================\n", *(long int*)id);
 
         pthread_mutex_unlock(&cyclicBufferMutex);
 
@@ -619,7 +637,7 @@ int main(int argc, char** argv) {
     }
 
     char* dirName;
-    int bufferSize, serverPort, mySocketFd;
+    int bufferSize, serverPort;
     struct sockaddr_in myAddr;
 
     handleArgs(argc, argv, &dirName, &portNum, &workerThreadsNum, &bufferSize, &serverPort, &serverAddr);
@@ -653,7 +671,12 @@ int main(int argc, char** argv) {
     //     handleExit(1);
     // }
 
-    tryInitAndSend(&serverSocketFd, GET_CLIENTS, MAX_MESSAGE_SIZE, MAIN_THREAD, &serverAddr, serverPort);
+    // serverAddr.sin_family = AF_INET;
+    // serverAddr.sin_port = portNum;
+    if (connectToPeer(&serverSocketFd, &serverAddr) == 1)
+        handleExit(1);
+
+    trySend(serverSocketFd, GET_CLIENTS, MAX_MESSAGE_SIZE, MAIN_THREAD);
 
     char message[MAX_MESSAGE_SIZE];
     tryRead(serverSocketFd, message, MAX_MESSAGE_SIZE, MAIN_THREAD);
@@ -694,6 +717,8 @@ int main(int argc, char** argv) {
         if (receivedIpStruct.s_addr != localIpAddr.s_addr || receivedPortNum != portNum)
             addNodeToList(clientsList, initClientInfo(receivedIpStruct, receivedPortNum));
     }
+    close(serverSocketFd);
+    // close(serverSocketFd);
 
     printLn("Got clients from server");
 
@@ -731,10 +756,11 @@ int main(int argc, char** argv) {
 
     // pthread_t threadIds[workerThreadsNum];
     threadIds = (pthread_t*)malloc(workerThreadsNum * sizeof(pthread_t));
+    threadsRunning = (char*)malloc(workerThreadsNum * sizeof(char));
     printf("worker threads num: %d\n", workerThreadsNum);
     for (int i = 0; i < workerThreadsNum; i++) {
         printf("i: %d\n", i);
-        pthread_create(&threadIds[i], NULL, workerThreadJob, &threadIds[i]);  // 3rd arg is the function which I will add, 4th arg is the void* arg of the function
+        pthread_create(&threadIds[i], NULL, workerThreadJob, &i);  // 3rd arg is the function which I will add, 4th arg is the void* arg of the function
     }
 
     printLn("Created worker threads");
@@ -943,12 +969,16 @@ int main(int argc, char** argv) {
             close(selectedSocket);
         } else if (strcmp(message, USER_OFF) == 0) {
             printLn("Got USER_OFF message");
-            int curIp, curPortNum;
+            int curPortNum;
+            struct in_addr curIpStruct;
 
-            tryRead(selectedSocket, &curIp, 4, MAIN_THREAD);
+            tryRead(selectedSocket, &curIpStruct.s_addr, 4, MAIN_THREAD);
             tryRead(selectedSocket, &curPortNum, 4, MAIN_THREAD);
-            curIp = ntohl(curIp);
+            // curIp = ntohl(curIp);
+            // curPortNum = ntohs(curPortNum);
+            curIpStruct.s_addr = ntohl(curIpStruct.s_addr);
             curPortNum = ntohs(curPortNum);
+            printf("ip: %s, port: %d\n", inet_ntoa(curIpStruct), curPortNum);
 
             // if (curIp != serverAddr.sin_addr.s_addr || curPortNum != serverPort) {
             //     printErrorLn("Got USER_OFF message from a non-server application\n");
@@ -956,7 +986,7 @@ int main(int argc, char** argv) {
             // }
 
             pthread_mutex_lock(&clientListMutex);
-            deleteNodeFromList(clientsList, &curPortNum, &curIp);
+            deleteNodeFromList(clientsList, &curPortNum, &curIpStruct.s_addr);
             pthread_mutex_unlock(&clientListMutex);
         } else if (strcmp(message, USER_ON) == 0) {
             printLn("Got USER_ON message");
@@ -964,8 +994,9 @@ int main(int argc, char** argv) {
             struct in_addr curIpStruct;
             tryRead(selectedSocket, &curIpStruct.s_addr, 4, MAIN_THREAD);
             tryRead(selectedSocket, &curPortNum, 4, MAIN_THREAD);
-            curIpStruct.s_addr = curIpStruct.s_addr;
-            curPortNum = curPortNum;
+            curIpStruct.s_addr = ntohl(curIpStruct.s_addr);
+            curPortNum = ntohs(curPortNum);
+            printf("ip: %s, port: %d\n", inet_ntoa(curIpStruct), curPortNum);
 
             pthread_mutex_lock(&clientListMutex);
 

@@ -25,14 +25,7 @@
 #include <time.h>
 #include <unistd.h>
 
-// COLOR CODES
-#define ANSI_COLOR_RED "\x1b[31m"
-#define ANSI_COLOR_GREEN "\x1b[32m"
-#define ANSI_COLOR_YELLOW "\x1b[33m"
-#define ANSI_COLOR_RESET "\x1b[0m"
-#define ANSI_COLOR_BLUE "\x1b[34m"
-#define ANSI_COLOR_MAGENTA "\x1b[35m"
-#define ANSI_COLOR_CYAN "\x1b[36m"
+#define MAX_CONNECT_ATTEMPTS 5
 
 #define LOG_ON "LOG_ON\0"
 #define LOG_OFF "LOG_OFF\0"
@@ -51,6 +44,15 @@
 // USEFUL SIZES
 #define MAX_STRING_INT_SIZE 12  // including '\0' character
 #define MAX_MESSAGE_SIZE 32     // including '\0' character
+
+// COLOR CODES
+#define ANSI_COLOR_RED "\x1b[31m"
+#define ANSI_COLOR_GREEN "\x1b[32m"
+#define ANSI_COLOR_YELLOW "\x1b[33m"
+#define ANSI_COLOR_RESET "\x1b[0m"
+#define ANSI_COLOR_BLUE "\x1b[34m"
+#define ANSI_COLOR_MAGENTA "\x1b[35m"
+#define ANSI_COLOR_CYAN "\x1b[36m"
 
 typedef enum CallingMode {
     SECONDARY_THREAD,

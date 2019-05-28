@@ -1,6 +1,8 @@
 #include "server.h"
 
 void handleExit(int exitNum) {
+    close(newSocketFd);
+    close(mySocketFd);
     exit(exitNum);
 }
 
@@ -66,8 +68,33 @@ void tryRead(int socketId, void* buffer, int bufferSize, CallingMode callingMode
     return;
 }
 
+void handleSigInt(int signal) {
+    if (signal != SIGINT) {
+        printErrorLn("Caught wrong signal instead of SIGINT");
+    }
+    printf("Caught SIGINT\n");
+
+    handleExit(1);
+}
+
 int main(int argc, char** argv) {
-    int portNum, mySocketFd, newSocketFd;
+    struct sigaction sigAction;
+
+    // setup the sighub handler
+    sigAction.sa_handler = &handleSigInt;
+
+    // restart the system call, if at all possible
+    sigAction.sa_flags = SA_RESTART;
+
+    // add only SIGINT signal (SIGUSR1 and SIGUSR2 signals are handled by the client's forked subprocesses)
+    sigemptyset(&sigAction.sa_mask);
+    sigaddset(&sigAction.sa_mask, SIGINT);
+
+    if (sigaction(SIGINT, &sigAction, NULL) == -1) {
+        perror("Error: cannot handle SIGINT");  // Should not happen
+    }
+
+    int portNum;
     struct sockaddr_in myAddr, incomingAddr;
 
     handleArgs(argc, argv, &portNum);
@@ -95,17 +122,21 @@ int main(int argc, char** argv) {
 
         if (strcmp(message, LOG_ON) == 0) {
             printLn("Got LOG_ON message");
+                
 
-            int curPortNum;
-            struct in_addr curIpStruct;
+            int curPortNum, curPortNumToSend;
+            struct in_addr curIpStruct, curIpStructToSend;
             tryRead(newSocketFd, &curIpStruct.s_addr, 4, MAIN_THREAD);
             printLn("after read 1");
 
             tryRead(newSocketFd, &curPortNum, 4, MAIN_THREAD);
             printLn("after read 2");
 
+            curIpStructToSend.s_addr = curIpStruct.s_addr;
+            curPortNumToSend = curPortNum;
             curIpStruct.s_addr = ntohl(curIpStruct.s_addr);
             curPortNum = ntohs(curPortNum);
+            printf("ip: %s, port: %d\n", inet_ntoa(curIpStruct), curPortNum);
 
             int clientSocketFd;
             struct sockaddr_in clientAddr;
@@ -128,14 +159,15 @@ int main(int argc, char** argv) {
                 // char curBuffer[32];
                 // sprintf(curBuffer, "%s", USER_ON);
                 trySend(clientSocketFd, USER_ON, MAX_MESSAGE_SIZE, MAIN_THREAD);
-                trySend(clientSocketFd, &curIpStruct.s_addr, 4, MAIN_THREAD);
-                trySend(clientSocketFd, &curPortNum, 4, MAIN_THREAD);
+                trySend(clientSocketFd, &curIpStructToSend.s_addr, 4, MAIN_THREAD);
+                trySend(clientSocketFd, &curPortNumToSend, 4, MAIN_THREAD);
 
                 close(clientSocketFd);
                 curClientInfo = curClientInfo->nextClientInfo;
             }
             // printf("ha");
             addNodeToList(clientsList, initClientInfo(curIpStruct, curPortNum));
+            printf("added node to list\n");
         } else if (strcmp(message, GET_CLIENTS) == 0) {
             printLn("Got GET_CLIENTS message");
 
@@ -162,18 +194,21 @@ int main(int argc, char** argv) {
                 curClientInfo = curClientInfo->nextClientInfo;
             }
         } else if (strcmp(message, LOG_OFF) == 0) {
-            int curPortNum;
-            struct in_addr curIpStruct;
+            int curPortNum, curPortNumToSend;
+            struct in_addr curIpStruct, curIpStructToSend;
             tryRead(newSocketFd, &curIpStruct.s_addr, 4, MAIN_THREAD);
             tryRead(newSocketFd, &curPortNum, 4, MAIN_THREAD);
 
+            curIpStructToSend.s_addr = curIpStruct.s_addr;
+            curPortNumToSend = curPortNum;
             curIpStruct.s_addr = ntohl(curIpStruct.s_addr);
             curPortNum = ntohs(curPortNum);
 
-            printf("Got ip: %s, port: %d\n",inet_ntoa( curIpStruct), curPortNum);
+            printf("Got ip: %s, port: %d\n", inet_ntoa(curIpStruct), curPortNum);
 
             if (deleteNodeFromList(clientsList, &curPortNum, &curIpStruct.s_addr) == -1) {
                 trySend(newSocketFd, ERROR_IP_PORT_NOT_FOUND_IN_LIST, MAX_MESSAGE_SIZE, MAIN_THREAD);
+                close(newSocketFd);
                 continue;
             }
 
@@ -184,13 +219,14 @@ int main(int argc, char** argv) {
                 clientAddr.sin_family = AF_INET;
                 clientAddr.sin_port = curClientInfo->portNumber;
                 clientAddr.sin_addr.s_addr = curClientInfo->ipStruct.s_addr;
+                printf("Sending USER_OFF to client with ip: %s, port: %d\n", inet_ntoa(curClientInfo->ipStruct), curClientInfo->portNumber);
 
                 if (connectToPeer(&clientSocketFd, &clientAddr) == 1)
                     handleExit(1);
 
                 trySend(clientSocketFd, USER_OFF, MAX_MESSAGE_SIZE, MAIN_THREAD);
-                trySend(clientSocketFd, &incomingAddr.sin_addr.s_addr, 4, MAIN_THREAD);
-                trySend(clientSocketFd, &curPortNum, 4, MAIN_THREAD);
+                trySend(clientSocketFd, &curIpStructToSend.s_addr, 4, MAIN_THREAD);
+                trySend(clientSocketFd, &curPortNumToSend, 4, MAIN_THREAD);
 
                 close(clientSocketFd);
                 curClientInfo = curClientInfo->nextClientInfo;

@@ -6,6 +6,8 @@
 
 #define MAX_CONNECTIONS 10
 
+int mySocketFd, newSocketFd;
+
 void handleExit(int exitNum);
 
 void handleArgs(int argc, char** argv, int* portNum);

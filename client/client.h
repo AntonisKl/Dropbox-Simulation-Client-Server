@@ -14,11 +14,12 @@ pthread_mutex_t cyclicBufferMutex = PTHREAD_MUTEX_INITIALIZER, clientListMutex =
 pthread_cond_t cyclicBufferFullCond = PTHREAD_COND_INITIALIZER, cyclicBufferEmptyCond = PTHREAD_COND_INITIALIZER;
 
 pthread_t bufferFillerThreadId;
-pthread_t* threadIds;
+pthread_t* threadIds = NULL;
+char* threadsRunning;
 
 // typedef struct CyclicBuffer CyclicBuffer;
 
-int serverSocketFd, workerThreadsNum;
+int serverSocketFd, mySocketFd, workerThreadsNum;
 struct sockaddr_in serverAddr;
 struct in_addr localIpAddr;
 int portNum;
