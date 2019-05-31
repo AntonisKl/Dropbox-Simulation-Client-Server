@@ -48,7 +48,7 @@ void createDir(char* dirPath) {
         exit(1);
     } else {
         wait(NULL);
-       // printf("dir with name: %s created!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", dirPath);
+        // printf("dir with name: %s created!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", dirPath);
     }
 
     return;
@@ -96,29 +96,83 @@ void removeFileName(char* path) {
 }
 
 struct in_addr getLocalIp() {
-    struct ifaddrs* ifAddrStruct = NULL;
-    struct ifaddrs* ifa = NULL;
-    void* tmpAddrPtr = NULL;
+    // struct ifaddrs* ifAddrStruct = NULL;
+    // struct ifaddrs* ifa = NULL;
+    // void* tmpAddrPtr = NULL;
 
-    getifaddrs(&ifAddrStruct);
+    // getifaddrs(&ifAddrStruct);
 
-    ifa = ifAddrStruct->ifa_next->ifa_next->ifa_next;
+    // ifa = ifAddrStruct->ifa_next->ifa_next->ifa_next;
 
-    if (ifa->ifa_addr->sa_family == AF_INET) {  // check it is IP4
-        // is a valid IP4 Address
-        tmpAddrPtr = &((struct sockaddr_in*)ifa->ifa_addr)->sin_addr;
-        char addressBuffer[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
-        printf("%s IP Address %s\n", ifa->ifa_name, addressBuffer);
-    } else if (ifa->ifa_addr->sa_family == AF_INET6) {  // check it is IP6
-        // is a valid IP6 Address
-        tmpAddrPtr = &((struct sockaddr_in6*)ifa->ifa_addr)->sin6_addr;
-        char addressBuffer[INET6_ADDRSTRLEN];
-        inet_ntop(AF_INET6, tmpAddrPtr, addressBuffer, INET6_ADDRSTRLEN);
-        printf("%s IP Address %s\n", ifa->ifa_name, addressBuffer);
+    // if (ifa->ifa_addr->sa_family == AF_INET) {  // check it is IP4
+    //     // is a valid IP4 Address
+    //     tmpAddrPtr = &((struct sockaddr_in*)ifa->ifa_addr)->sin_addr;
+    //     char addressBuffer[INET_ADDRSTRLEN];
+    //     inet_ntop(AF_INET, tmpAddrPtr, addressBuffer, INET_ADDRSTRLEN);
+    //     printf("%s IP Address %s\n", ifa->ifa_name, addressBuffer);
+    // } else if (ifa->ifa_addr->sa_family == AF_INET6) {  // check it is IP6
+    //     // is a valid IP6 Address
+    //     tmpAddrPtr = &((struct sockaddr_in6*)ifa->ifa_addr)->sin6_addr;
+    //     char addressBuffer[INET6_ADDRSTRLEN];
+    //     inet_ntop(AF_INET6, tmpAddrPtr, addressBuffer, INET6_ADDRSTRLEN);
+    //     printf("%s IP Address %s\n", ifa->ifa_name, addressBuffer);
+    // }
+
+    // if (ifAddrStruct != NULL) freeifaddrs(ifAddrStruct);
+    // return ((struct sockaddr_in*)ifa->ifa_addr)->sin_addr;
+
+    FILE* f;
+    char line[100], *p, *c;
+
+    f = fopen("/proc/net/route", "r");
+
+    while (fgets(line, 100, f)) {
+        p = strtok(line, "\t");
+        c = strtok(NULL, "\t");
+
+        if (p != NULL && c != NULL) {
+            if (strcmp(c, "00000000") == 0) {
+                printf("Default interface is: %s\n", p);
+                break;
+            }
+        }
     }
 
-    if (ifAddrStruct != NULL) freeifaddrs(ifAddrStruct);
+    //which family do we require , AF_INET or AF_INET6
+    int fm = AF_INET;
+    struct ifaddrs *ifaddr, *ifa;
+    int family;
+
+    if (getifaddrs(&ifaddr) == -1) {
+        perror("getifaddrs");
+        exit(EXIT_FAILURE);
+    }
+
+    //Walk through linked list, maintaining head pointer so we can free list later
+    for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == NULL) {
+            continue;
+        }
+
+        family = ifa->ifa_addr->sa_family;
+
+        if (strcmp(ifa->ifa_name, p) == 0) {
+            if (family == fm) {
+                // s = getnameinfo(ifa->ifa_addr, (family == AF_INET) ? sizeof(struct sockaddr_in) : sizeof(struct sockaddr_in6), host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST);
+
+                // if (s != 0) {
+                // printf("getnameinfo() failed: %s\n", gai_strerror(s));
+                // exit(EXIT_FAILURE);
+                // }
+
+                printf("address: %s\n", inet_ntoa(((struct sockaddr_in*)ifa->ifa_addr)->sin_addr));
+                break;
+            }
+            // printf("\n");
+        }
+    }
+
+    freeifaddrs(ifaddr);
     return ((struct sockaddr_in*)ifa->ifa_addr)->sin_addr;
 }
 
@@ -181,7 +235,7 @@ int createServer(int* socketFd, struct sockaddr_in* socketAddr, int portNum, int
         perror("Bind error");
         return 1;
     }
-   // printf("ha\n");
+    // printf("ha\n");
     if (listen(*socketFd, maxConnectionsNum) < 0) {
         perror("Listen error");
         return 1;

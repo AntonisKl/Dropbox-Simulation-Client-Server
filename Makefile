@@ -2,7 +2,10 @@ CC = gcc
 CFLAGS  = -g -Wall
 RM = rm -rf
 
-all: dropbox_server dropbox_client
+all: createExe exe dropbox_server dropbox_client
+
+createExe:
+	[ -d exe ] || mkdir exe
 
 dropbox_server:  server.o list.o utils.o
 	$(CC) $(CFLAGS) -o exe/dropbox_server server.o list.o utils.o -pthread
