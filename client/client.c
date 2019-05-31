@@ -12,9 +12,10 @@ void handleExit(int exitNum) {
     // }
     close(mySocketFd);
 
+    if (threadIds != NULL) {
     for (int i = 0; i < workerThreadsNum; i++) {
-        if (threadsRunning == NULL || !threadsRunning[i])
-            continue;
+        // if (threadsRunning == NULL || !threadsRunning[i])
+        //     continue;
 
         printf("i: %d\n", i);
         pthread_mutex_lock(&cyclicBufferMutex);
@@ -36,6 +37,7 @@ void handleExit(int exitNum) {
         pthread_mutex_unlock(&cyclicBufferMutex);
         // if (cyclicBufferWasEmpty) {
         pthread_cond_signal(&cyclicBufferEmptyCond);
+    }
     }
 
     if (bufferFillerThreadCreated) {
@@ -62,6 +64,7 @@ void handleExit(int exitNum) {
                 printf(ANSI_COLOR_RED "Worker thread with id %lu exited with an error" ANSI_COLOR_RESET "\n", threadIds[i]);
             }
         }
+        free(threadIds);
     }
     close(serverSocketFd);
 
@@ -183,16 +186,16 @@ void populateFileList(List* fileList, char* inputDirName, int indent, char* root
         stat(path, &curStat);
 
         if (!S_ISREG(curStat.st_mode)) {  // is a directory
-            printf("dir: %s\n", path);
+            // printf("dir: %s\n", path);
             populateFileList(fileList, path, indent + 2, rootDirName);  // continue traversing directory
         } else {                                                        // is a file
-            printf("file: %s\n", path);
+            // printf("file: %s\n", path);
             addNodeToList(fileList, initFile(path, curStat.st_size, curStat.st_mtime));  // add a REGULAR_FILE node to FileList
         }
     }
 
     if (isEmpty == 1 && strcmp(inputDirName, rootDirName) != 0) {
-        printf("he\n");
+        // printf("he\n");
         // snprintf(path, PATH_MAX, "%s/%s", inputDirName, entry->d_name);  // append to inputDirName the current file's name
         stat(inputDirName, &curStat);
 
@@ -395,7 +398,7 @@ void* workerThreadJob(void* index) {
     //     perror("Error: cannot handle SIGINT");  // Should not happen
     // }
 
-    threadsRunning[*(int*)index] = 1;
+    // threadsRunning[*(int*)index] = 1;
 
     while (1) {
         printf("in worker thread: while1\n");
@@ -523,7 +526,7 @@ void* workerThreadJob(void* index) {
             printf("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++= filePath: |%s|\n", filePath);
 
             if (connectToPeer(&curPeerSocketFd, &curPeerSocketAddr) == 1)
-                pthread_exit((void**)-1);
+                pthread_exit((void**)1);
             printf("Worker thread hanlding file node///////////////////////////////////////////////////\n");
 
             trySend(curPeerSocketFd, GET_FILE, MAX_MESSAGE_SIZE, SECONDARY_THREAD);
@@ -634,6 +637,11 @@ void* workerThreadJob(void* index) {
 
             close(curPeerSocketFd);
         } else {
+            printf("----------------------------------> thread with id %ld\n", pthread_self());
+            // pthread_mutex_lock(&exitedMutex);
+            // threadsExited++;
+            // printf("threads exited: %d\n", threadsExited);
+            // pthread_mutex_unlock(&exitedMutex);
             pthread_exit((void**)0);
         }
         freeBufferNode(&curBufferNode);
@@ -644,15 +652,15 @@ void* workerThreadJob(void* index) {
 void handleIncomingMessage(int socketFd, char* message, char* dirName) {
     if (strcmp(message, GET_FILE_LIST) == 0) {
         printLn("Got GET_FILE_LIST message");
-        printf("111\n");
+       // printf("111\n");
 
         trySend(socketFd, FILE_LIST, MAX_MESSAGE_SIZE, MAIN_THREAD);
-        printf("111.5\n");
+       // printf("111.5\n");
 
         trySend(socketFd, &filesList->size, 4, MAIN_THREAD);
-        printf("will send file list size: %u\n", filesList->size);
+       // printf("will send file list size: %u\n", filesList->size);
 
-        printf("222\n");
+       // printf("222\n");
         File* curFile = filesList->firstNode;
         while (curFile != NULL) {
             char curFilePathCopy[strlen(curFile->path) + 1];
@@ -973,20 +981,20 @@ int main(int argc, char** argv) {
 
     filesList = initList(FILES);
     populateFileList(filesList, dirName, 0, dirName);
-    printf("1\n");
+   // printf("1\n");
     if (clientsInserted < clientsList->size) {
         pthread_create(&bufferFillerThreadId, NULL, bufferFillerThreadJob, NULL);  // 3rd arg is the function which I will add, 4th arg is the void* arg of the function
         bufferFillerThreadCreated = 1;
         printLn("Created buffer filler thread cause clients were too much");
     }
-    printf("2\n");
+   // printf("2\n");
 
     // pthread_t threadIds[workerThreadsNum];
     threadIds = (pthread_t*)malloc(workerThreadsNum * sizeof(pthread_t));
-    threadsRunning = (char*)malloc(workerThreadsNum * sizeof(char));
+    // threadsRunning = (char*)malloc(workerThreadsNum * sizeof(char));
     printf("worker threads num: %d\n", workerThreadsNum);
     for (int i = 0; i < workerThreadsNum; i++) {
-        printf("i: %d\n", i);
+       // printf("i: %d\n", i);
         pthread_create(&threadIds[i], NULL, workerThreadJob, &i);  // 3rd arg is the function which I will add, 4th arg is the void* arg of the function
     }
 

@@ -151,10 +151,10 @@ void* addNodeToList(List* list, void* nodeToInsert) {
     } else {
         void* curNode = list->firstNode;
         // curNode = (list->mode == FILES ? (File*) curNode : (ClientInfo*) curNode);
-        printf("before if\n");
+       // printf("before if\n");
 
         if (list->mode == FILES ? strcmp(((File*)nodeToInsert)->path, ((File*)curNode)->path) < 0 : ((ClientInfo*)nodeToInsert)->portNumber < ((ClientInfo*)curNode)->portNumber) {
-                    printf("will insert at start\n");
+                   // printf("will insert at start\n");
 
             // insert at start
             // void* fileToInsert = nodeToInsert;
@@ -171,10 +171,10 @@ void* addNodeToList(List* list, void* nodeToInsert) {
             // printf(ANSI_COLOR_MAGENTA "Inserted file with path %s to List\n" ANSI_COLOR_RESET, path);
             return list->firstNode;
         }
-        printf("before while\n");
+       // printf("before while\n");
         while (curNode != NULL) {
             if (list->mode == FILES ? ((File*)curNode)->nextFile != NULL : ((ClientInfo*)curNode)->nextClientInfo != NULL) {
-                printf("in big if\n");
+               // printf("in big if\n");
                 if (list->mode == FILES ? strcmp(((File*)nodeToInsert)->path, ((File*)curNode)->nextFile->path) < 0 : ((ClientInfo*)nodeToInsert)->portNumber < ((ClientInfo*)curNode)->nextClientInfo->portNumber) {
                     // Node* fileToInsert = initNode(path, contentsSize, type);
                     if (list->mode == FILES) {
@@ -183,18 +183,18 @@ void* addNodeToList(List* list, void* nodeToInsert) {
                         ((File*)curNode)->nextFile->prevFile = (File*)nodeToInsert;
                         ((File*)curNode)->nextFile = (File*)nodeToInsert;
                     } else {
-                        printf("hi\n");
+                       // printf("hi\n");
                         ((ClientInfo*)nodeToInsert)->prevClientInfo = (ClientInfo*)curNode;
-                                                printf("hi1\n");
+                                               // printf("hi1\n");
 
                         ((ClientInfo*)nodeToInsert)->nextClientInfo = ((ClientInfo*)curNode)->nextClientInfo;
-                                                printf("hi2\n");
+                                               // printf("hi2\n");
 
                         ((ClientInfo*)curNode)->nextClientInfo->prevClientInfo = (ClientInfo*)nodeToInsert;
-                                                printf("hi3\n");
+                                               // printf("hi3\n");
 
                         ((ClientInfo*)curNode)->nextClientInfo = (ClientInfo*)nodeToInsert;
-                                                printf("hi4\n");
+                                               // printf("hi4\n");
 
                     }
                     // nodeToInsert->nextNode = curNode->nextNode;
@@ -205,7 +205,7 @@ void* addNodeToList(List* list, void* nodeToInsert) {
                     return list->mode == FILES ? (void*)((File*)curNode)->nextFile : (void*)((ClientInfo*)curNode)->nextClientInfo;
                 }
             } else {
-                printf("in else\n");
+               // printf("in else\n");
                 // insert at the end
                 // curNode->nextNode = initNode(path, contentsSize, type);
                 if (list->mode == FILES) {
@@ -274,7 +274,7 @@ int deleteNodeFromList(List* list, void* searchValue1, void* searchValue2) {
         freeFile((File**)&nodeToDelete);
     } else {
         freeClientInfo((ClientInfo**)&nodeToDelete);
-        printf("deleted client\n");
+       // printf("deleted client\n");
     }
 
     list->size--;

@@ -15,7 +15,7 @@ pthread_cond_t cyclicBufferFullCond = PTHREAD_COND_INITIALIZER, cyclicBufferEmpt
 
 pthread_t bufferFillerThreadId;
 pthread_t* threadIds = NULL;
-char* threadsRunning;
+// char* threadsRunning;
 
 // typedef struct CyclicBuffer CyclicBuffer;
 

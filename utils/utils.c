@@ -48,7 +48,7 @@ void createDir(char* dirPath) {
         exit(1);
     } else {
         wait(NULL);
-        printf("dir with name: %s created!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", dirPath);
+       // printf("dir with name: %s created!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n", dirPath);
     }
 
     return;
@@ -181,7 +181,7 @@ int createServer(int* socketFd, struct sockaddr_in* socketAddr, int portNum, int
         perror("Bind error");
         return 1;
     }
-    printf("ha\n");
+   // printf("ha\n");
     if (listen(*socketFd, maxConnectionsNum) < 0) {
         perror("Listen error");
         return 1;
