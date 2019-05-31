@@ -65,6 +65,7 @@ void handleExit(int exitNum) {
             }
         }
         free(threadIds);
+        threadIds = NULL;
     }
     close(serverSocketFd);
 
@@ -85,8 +86,8 @@ void handleExit(int exitNum) {
 
     // struct in_addr myIpStructToSend = getLocalIp();
 
-    free(threadIds);
-    threadIds = NULL;
+    // free(threadIds);
+    // threadIds = NULL;
 
     close(serverSocketFd);
 
