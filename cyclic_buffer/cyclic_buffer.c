@@ -5,7 +5,7 @@ void initBuffer(CyclicBuffer* cyclicBuffer, int bufferSize) {
     cyclicBuffer->maxSize = bufferSize;
     cyclicBuffer->curSize = 0;
     cyclicBuffer->startIndex = 0;
-    cyclicBuffer->endIndex = -1;
+    cyclicBuffer->endIndex = -1;  // end index is -1 at start, the fist node will be added to index 0 of the buffer
 
     return;
 }
@@ -15,7 +15,7 @@ BufferNode* initBufferNode(char* filePath, time_t version, uint32_t ip, int port
     if (filePath != NULL) {
         strcpy(bufferNode->filePath, filePath);
     } else {
-        strcpy(bufferNode->filePath, ",");
+        strcpy(bufferNode->filePath, ",");  // "," indicates client buffer node
     }
 
     bufferNode->version = version;
@@ -33,12 +33,14 @@ int cyclicBufferFull(CyclicBuffer* cyclicBuffer) {
 }
 
 int addNodeToCyclicBuffer(CyclicBuffer* cyclicBuffer, char* filePath, time_t version, uint32_t ip, int portNum) {
-    if (cyclicBufferFull(cyclicBuffer))
+    if (cyclicBufferFull(cyclicBuffer))  // cannot add node to buffer
         return 1;
 
+    // proceed end index and insert new node
     cyclicBuffer->endIndex = (cyclicBuffer->endIndex + 1) % cyclicBuffer->maxSize;
     cyclicBuffer->buffer[cyclicBuffer->endIndex] = initBufferNode(filePath, version, ip, portNum);
 
+    // update current size
     cyclicBuffer->curSize++;
 
     return 0;
@@ -48,14 +50,18 @@ BufferNode* getNodeFromCyclicBuffer(CyclicBuffer* cyclicBuffer) {
     if (cyclicBufferEmpty(cyclicBuffer))
         return NULL;
 
+    // get a buffer node by copying its contents to a new one and then update start index
     BufferNode* curBufferNode = cyclicBuffer->buffer[cyclicBuffer->startIndex];
     BufferNode* bufferNodeToReturn = initBufferNode(curBufferNode->filePath, curBufferNode->version, curBufferNode->ip, curBufferNode->portNumber);
     cyclicBuffer->startIndex = (cyclicBuffer->startIndex + 1) % cyclicBuffer->maxSize;
+
+    // update current size
     cyclicBuffer->curSize--;
 
+    // free old buffer node
     freeBufferNode(&curBufferNode);
 
-    return bufferNodeToReturn;
+    return bufferNodeToReturn;// return copied buffer node
 }
 
 void freeBufferNode(BufferNode** bufferNode) {

@@ -1,5 +1,7 @@
 #include "list.h"
 
+// start of File functions
+
 File* initFile(char* path, off_t contentsSize, time_t timestamp) {
     File* file = (File*)malloc(sizeof(File));
 
@@ -40,6 +42,10 @@ void freeFileRec(File** file) {
     return;
 }
 
+// end of File functions
+
+// start of ClientInfo functions
+
 ClientInfo* initClientInfo(struct in_addr ipStruct, int portNumber) {
     ClientInfo* clientInfo = (ClientInfo*)malloc(sizeof(ClientInfo));
 
@@ -74,6 +80,10 @@ void freeClientInfoRec(ClientInfo** clientInfo) {
     return;
 }
 
+// end of ClientInfo functions
+
+// start of generic List functions
+
 List* initList(ListMode mode) {
     List* list = (List*)malloc(sizeof(List));
     list->size = 0;
@@ -87,6 +97,7 @@ void freeList(List** list) {
     if ((*list) == NULL)
         return;
 
+    // use the appropriate function according to mode's value
     if ((*list)->mode == FILES) {
         freeFileRec((File**)&(*list)->firstNode);
     } else if ((*list)->mode == CLIENTS) {
@@ -106,9 +117,11 @@ void* findNodeInList(List* list, void* searchValue1, void* searchValue2) {
     void* curNode = list->firstNode;
 
     while (curNode != NULL) {
+        // do the appropriate comparison according to mode's value
         if (list->mode == FILES ? strcmp(((File*)curNode)->path, (char*)searchValue1) == 0 : ((ClientInfo*)curNode)->portNumber == *((int*)searchValue1) && (((ClientInfo*)curNode)->ipStruct).s_addr == *(uint32_t*)searchValue2) {
             return curNode;
-        } else if (list->mode == FILES ? strcmp((char*)searchValue1, ((File*)curNode)->path) < 0 : *((int*)searchValue1) < ((ClientInfo*)curNode)->portNumber) {  // no need for searching further since the list is sorted by fileId
+        } else if (list->mode == FILES ? strcmp((char*)searchValue1, ((File*)curNode)->path) < 0 : *((int*)searchValue1) < ((ClientInfo*)curNode)->portNumber) {
+            // no need for searching further since the list is sorted by path or port number
             return NULL;
         }
         curNode = list->mode == FILES ? (void*)((File*)curNode)->nextFile : (void*)((ClientInfo*)curNode)->nextClientInfo;
@@ -122,9 +135,8 @@ void* addNodeToList(List* list, void* nodeToInsert) {
 
     void* foundNode = list->mode == FILES ? findNodeInList(list, ((File*)nodeToInsert)->path, NULL) : findNodeInList(list, &((ClientInfo*)nodeToInsert)->portNumber, &((ClientInfo*)nodeToInsert)->ipStruct.s_addr);
 
-    if (foundNode != NULL) {  // is duplicate
-        return NULL;  // do not add duplicate
-    }
+    if (foundNode != NULL)  // is duplicate
+        return NULL;        // do not add duplicate
 
     if (list->size == 0) {
         list->firstNode = nodeToInsert;
@@ -135,7 +147,6 @@ void* addNodeToList(List* list, void* nodeToInsert) {
         void* curNode = list->firstNode;
 
         if (list->mode == FILES ? strcmp(((File*)nodeToInsert)->path, ((File*)curNode)->path) < 0 : ((ClientInfo*)nodeToInsert)->portNumber < ((ClientInfo*)curNode)->portNumber) {
-
             // insert at start
             if (list->mode == FILES) {
                 ((File*)nodeToInsert)->nextFile = (File*)curNode;
@@ -152,6 +163,7 @@ void* addNodeToList(List* list, void* nodeToInsert) {
         while (curNode != NULL) {
             if (list->mode == FILES ? ((File*)curNode)->nextFile != NULL : ((ClientInfo*)curNode)->nextClientInfo != NULL) {
                 if (list->mode == FILES ? strcmp(((File*)nodeToInsert)->path, ((File*)curNode)->nextFile->path) < 0 : ((ClientInfo*)nodeToInsert)->portNumber < ((ClientInfo*)curNode)->nextClientInfo->portNumber) {
+                    // insert somewhere in the middle
                     if (list->mode == FILES) {
                         ((File*)nodeToInsert)->prevFile = (File*)curNode;
                         ((File*)nodeToInsert)->nextFile = ((File*)curNode)->nextFile;
@@ -159,13 +171,9 @@ void* addNodeToList(List* list, void* nodeToInsert) {
                         ((File*)curNode)->nextFile = (File*)nodeToInsert;
                     } else {
                         ((ClientInfo*)nodeToInsert)->prevClientInfo = (ClientInfo*)curNode;
-
                         ((ClientInfo*)nodeToInsert)->nextClientInfo = ((ClientInfo*)curNode)->nextClientInfo;
-
                         ((ClientInfo*)curNode)->nextClientInfo->prevClientInfo = (ClientInfo*)nodeToInsert;
-
                         ((ClientInfo*)curNode)->nextClientInfo = (ClientInfo*)nodeToInsert;
-
                     }
                     list->size++;
                     return list->mode == FILES ? (void*)((File*)curNode)->nextFile : (void*)((ClientInfo*)curNode)->nextClientInfo;
@@ -204,11 +212,14 @@ int deleteNodeFromList(List* list, void* searchValue1, void* searchValue2) {
         }
         return -1;
     }
-    if ((list->mode == FILES && strcmp(((File*)nodeToDelete)->path, ((File*)list->firstNode)->path) == 0) || (list->mode == CLIENTS && ((ClientInfo*)list->firstNode)->portNumber == ((ClientInfo*)nodeToDelete)->portNumber &&
-                                                                                                              ((struct in_addr)((ClientInfo*)list->firstNode)->ipStruct).s_addr == ((struct in_addr)((ClientInfo*)nodeToDelete)->ipStruct).s_addr)) {
+    if (/* files list */ (list->mode == FILES && strcmp(((File*)nodeToDelete)->path, ((File*)list->firstNode)->path) == 0) ||
+        /* clients list */ (list->mode == CLIENTS && ((ClientInfo*)list->firstNode)->portNumber == ((ClientInfo*)nodeToDelete)->portNumber &&
+                            ((struct in_addr)((ClientInfo*)list->firstNode)->ipStruct).s_addr == ((struct in_addr)((ClientInfo*)nodeToDelete)->ipStruct).s_addr)) {
+        // nodeToDelete is the first node of list
         list->firstNode = (list->mode == FILES ? (void*)((File*)nodeToDelete)->nextFile : (void*)((ClientInfo*)nodeToDelete)->nextClientInfo);
     }
     if (list->mode == FILES ? ((File*)nodeToDelete)->prevFile != NULL : ((ClientInfo*)nodeToDelete)->prevClientInfo != NULL) {
+        // nodeToDelete has a previous node
         if (list->mode == FILES) {
             ((File*)nodeToDelete)->prevFile->nextFile = ((File*)nodeToDelete)->nextFile;
         } else {
@@ -216,6 +227,7 @@ int deleteNodeFromList(List* list, void* searchValue1, void* searchValue2) {
         }
     }
     if (list->mode == FILES ? ((File*)nodeToDelete)->nextFile != NULL : ((ClientInfo*)nodeToDelete)->nextClientInfo != NULL) {
+        // nodeToDelete has a next node
         if (list->mode == FILES) {
             ((File*)nodeToDelete)->nextFile->prevFile = ((File*)nodeToDelete)->prevFile;
         } else {
@@ -223,13 +235,16 @@ int deleteNodeFromList(List* list, void* searchValue1, void* searchValue2) {
         }
     }
 
+    // free nodeToDelete according to mode's value
     if (list->mode == FILES) {
         freeFile((File**)&nodeToDelete);
     } else {
         freeClientInfo((ClientInfo**)&nodeToDelete);
     }
 
-    list->size--;
+    list->size--;  // update list's size
 
     return 0;
 }
+
+// end of generic List functions
