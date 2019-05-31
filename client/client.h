@@ -46,11 +46,21 @@ CyclicBuffer cyclicBuffer;
 uint32_t nextClientIp;
 int nextClientPortNum;
 
+// SECONDARY_THREAD: indicates that a read or write function will be called from a non-main thread
+// MAIN_THREAD: indicates that a read or write function will be called from the main thread
+typedef enum CallingMode {
+    SECONDARY_THREAD,
+    MAIN_THREAD
+} CallingMode;
+
 // handles the exit of all the sub-threads, the main thread and frees allocated memory
 void handleExit(int exitNum);
 
-// handles input arguments
+// checks and stores input arguments
 void handleArgs(int argc, char** argv, char** dirName, int* portNum, int* workerThreadsNum, int* bufferSize, int* serverPort, struct sockaddr_in* serverAddr);
+
+// creates file with fileName and writes contents into it
+void createAndWriteToFile(char* fileName, char* contents);
 
 // recursively traverses the directory with name inputDirName and all of its subdirectories and
 // adds to fileList all entries of the regular files and directories of the directory with name inputDirName

@@ -58,30 +58,13 @@ void _mkdir(const char* dir) {
     }
 }
 
-void createAndWriteToFile(char* fileName, char* contents) {
-    FILE* file = fopen(fileName, "w");  // overwrite if file exists
-    if (file == NULL) {
-        perror("fopen failed");
-        exit(1);
-    }
-
-    fprintf(file, "%s", contents);
-    fflush(file);
-
-    if (fclose(file) == EOF) {
-        perror("fclose failed");
-        exit(1);
-    }
-    return;
-}
-
 void removeFileName(char* path) {
     char* const last = strrchr(path, '/');
     if (last != NULL)
         *last = '\0';
 }
 
-struct in_addr getLocalIp() {
+struct in_addr getPrivateIp() {
     FILE* f;
     char line[100], *p, *c;
 
@@ -108,7 +91,7 @@ struct in_addr getLocalIp() {
         exit(EXIT_FAILURE);
     }
 
-    // Walk through linked list, maintaining head pointer so we can free list later
+    // iterate through linked list, maintaining head pointer so we can free list later
     for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
         if (ifa->ifa_addr == NULL) {
             continue;
@@ -123,12 +106,14 @@ struct in_addr getLocalIp() {
             }
         }
     }
+
     freeifaddrs(ifaddr);
 
     return ((struct sockaddr_in*)ifa->ifa_addr)->sin_addr;
 }
 
 int connectToPeer(int* socketFd, struct sockaddr_in* peerAddr) {
+    // create socket
     if (((*socketFd) = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("Socket creation error");
         return 1;
@@ -136,14 +121,16 @@ int connectToPeer(int* socketFd, struct sockaddr_in* peerAddr) {
 
     int attempts = 1;
     char connected = 1;
+    // try to connect for MAX_CONNECT_ATTEMPTS maximum times
     while (connect((*socketFd), (struct sockaddr*)peerAddr, sizeof(*peerAddr)) < 0) {
         perror("Socket connection failed");
         printf("Attempt: %d, retrying...\n", attempts);
         attempts++;
-        if (attempts == (MAX_CONNECT_ATTEMPTS) + 1) {
+        if (attempts == (MAX_CONNECT_ATTEMPTS) + 1) {  // reached maximum reconnect times
             connected = 0;
             break;
         }
+        // sleep for 1 second and then try to connect again
         sleep(1);
     }
 
@@ -157,22 +144,23 @@ int connectToPeer(int* socketFd, struct sockaddr_in* peerAddr) {
 }
 
 int createServer(int* socketFd, struct sockaddr_in* socketAddr, int portNum, int maxConnectionsNum) {
-    // Creating socket file descriptor
+    // create socket
     if (((*socketFd) = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("Socket creation error");
         return 1;
     }
 
-    socketAddr->sin_family = AF_INET;
-    socketAddr->sin_addr = getLocalIp();
-
+    socketAddr->sin_family = AF_INET;       // IPv4
+    socketAddr->sin_addr = getPrivateIp();  // get private ip
     socketAddr->sin_port = portNum;
 
-    if (bind(*socketFd, (struct sockaddr*)socketAddr,
-             sizeof(*socketAddr)) < 0) {
+    // bind address to socket
+    if (bind(*socketFd, (struct sockaddr*)socketAddr, sizeof(*socketAddr)) < 0) {
         perror("Bind error");
         return 1;
     }
+    
+    // start listenning for incoming connections
     if (listen(*socketFd, maxConnectionsNum) < 0) {
         perror("Listen error");
         return 1;

@@ -26,8 +26,9 @@
 #include <unistd.h>
 #include <utime.h>
 
-#define MAX_CONNECT_ATTEMPTS 5
+#define MAX_CONNECT_ATTEMPTS 5 // maximum reconnection attempts in case something goes wrong while trying to connect to a peer
 
+// defines for all messages
 #define LOG_ON "LOG_ON\0"
 #define LOG_OFF "LOG_OFF\0"
 #define GET_FILE_LIST "GET_FILE_LIST\0"
@@ -42,11 +43,11 @@
 #define USER_OFF "USER_OFF\0"
 #define ERROR_IP_PORT_NOT_FOUND_IN_LIST "ERROR_IP_PORT_NOT_FOUND_IN_LIST\0"
 
-// USEFUL SIZES
+// useful sizes
 #define MAX_STRING_INT_SIZE 12  // including '\0' character
 #define MAX_MESSAGE_SIZE 32     // including '\0' character
 
-// COLOR CODES
+// color codes
 #define ANSI_COLOR_RED "\x1b[31m"
 #define ANSI_COLOR_GREEN "\x1b[32m"
 #define ANSI_COLOR_YELLOW "\x1b[33m"
@@ -55,29 +56,33 @@
 #define ANSI_COLOR_MAGENTA "\x1b[35m"
 #define ANSI_COLOR_CYAN "\x1b[36m"
 
-typedef enum CallingMode {
-    SECONDARY_THREAD,
-    MAIN_THREAD
-} CallingMode;
-
+// prints string s in red color followed by '\n'
 void printErrorLn(char* s);
 
+// prints string s followed by '\n'
 void printLn(char* s);
 
+// returns 1 if file with name fileName exists
+// returns 0 if file with name fileName doesn't exist
 char fileExists(char* fileName);
 
+// returns 1 if directory with name dirName exists
+// returns 0 if directory with name dirName doesn't exist
 char dirExists(char* dirName);
 
+// creates directory with name dir and all of its parent directories if they don't exist
 void _mkdir(const char* dir);
 
-void createAndWriteToFile(char* fileName, char* contents);
-
+// removes the file name from path
 void removeFileName(char* path);
 
-struct in_addr getLocalIp();
+// returns current machine's private ip address
+struct in_addr getPrivateIp();
 
+// tries to create a connection to peer which has information that is stored in peerAddr variable
 int connectToPeer(int* socketFd, struct sockaddr_in* peerAddr);
 
+// tries to create a server in current machine in port portNum
 int createServer(int* socketFd, struct sockaddr_in* socketAddr, int portNum, int maxConnectionsNum);
 
 #endif

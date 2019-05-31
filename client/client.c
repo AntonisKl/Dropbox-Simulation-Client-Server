@@ -142,6 +142,23 @@ void handleArgs(int argc, char** argv, char** dirName, int* portNum, int* worker
     return;
 }
 
+void createAndWriteToFile(char* fileName, char* contents) {
+    FILE* file = fopen(fileName, "w");  // overwrite if file exists
+    if (file == NULL) {
+        perror("fopen failed");
+        pthread_exit((void**)1);
+    }
+
+    fprintf(file, "%s", contents);
+    fflush(file);
+
+    if (fclose(file) == EOF) {
+        perror("fclose failed");
+        pthread_exit((void**)1);
+    }
+    return;
+}
+
 void populateFileList(List* fileList, char* inputDirName, char* rootDirName) {
     DIR* dir;
     struct dirent* entry;
@@ -185,6 +202,7 @@ void tryWrite(int socketFd, void* buffer, int bufferSize, CallingMode callingMod
     // write data to socket
     if (write(socketFd, buffer, bufferSize) == -1) {
         perror("Send error");
+        // exit according to callingMode's value
         if (callingMode == MAIN_THREAD)
             handleExit(1);
         else
@@ -214,7 +232,7 @@ int tryRead(int socketId, void* buffer, int bufferSize, CallingMode callingMode)
         returnValue = read(socketId, buffer + progress, tempBufferSize);  // read remaining bytes that aren't written yet
     }
 
-    if (returnValue == 0)  // 0 = EOF which means that client closed connection
+    if (returnValue == 0)  // 0 = EOF which means that client closed the connection
         return 1;
 
     return 0;
@@ -651,12 +669,12 @@ int main(int argc, char** argv) {
     // restart the system call, if at all possible
     sigAction.sa_flags = SA_RESTART;
 
-    // add only SIGINT signal (SIGUSR1 and SIGUSR2 signals are handled by the client's forked subprocesses)
+    // add only SIGINT signal
     sigemptyset(&sigAction.sa_mask);
     sigaddset(&sigAction.sa_mask, SIGINT);
 
     if (sigaction(SIGINT, &sigAction, NULL) == -1) {
-        perror("Error: cannot handle SIGINT");  // Should not happen
+        perror("Error: cannot handle SIGINT");  // should not happen
     }
 
     char* dirName;
@@ -673,7 +691,7 @@ int main(int argc, char** argv) {
     }
     printLn("Connected to server");
 
-    localIpAddr = getLocalIp();
+    localIpAddr = getPrivateIp();
     printf("local address: %s\n", inet_ntoa(localIpAddr));
 
     // create this client's name string
@@ -801,8 +819,8 @@ int main(int argc, char** argv) {
             if (!FD_ISSET(i, &readSocketsSet))  // socket not ready
                 continue;
 
-            if (!(i == mySocketFd)) {  //
-                // Data arrived on an already connected socket
+            if (!(i == mySocketFd)) { // already-connected socket
+                // data arrived on an already connected socket
                 if (tryRead(i, message, MAX_MESSAGE_SIZE, MAIN_THREAD) == 1) {
                     close(i);
                     FD_CLR(i, &activeSocketsSet);
@@ -822,7 +840,7 @@ int main(int argc, char** argv) {
 
             printLn("Accepted new incoming connection");
 
-            // add new socket descriptor to active sockets' set
+            // add the new socket descriptor to active sockets' set
             FD_SET(newSocketFd, &activeSocketsSet);
         }
     }

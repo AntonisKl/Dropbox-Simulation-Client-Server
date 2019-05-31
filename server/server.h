@@ -9,14 +9,21 @@
 int mySocketFd, newSocketFd;
 List* clientsList = NULL;
 
+// frees allocated memory, closes sockets etc. and exits
 void handleExit(int exitNum);
 
+// checks and stores input arguments
 void handleArgs(int argc, char** argv, int* portNum);
 
-void tryWrite(int socketFd, void* buffer, int bufferSize, CallingMode callingMode);
+// calls write, performs error handling and exits according to callingMode's value (MAIN_THREAD or SECONDARY_THREAD)
+void tryWrite(int socketFd, void* buffer, int bufferSize);
 
-int tryRead(int socketId, void* buffer, int bufferSize, CallingMode callingMode);
+// calls read, performs error handling and exits according to callingMode's value (MAIN_THREAD or SECONDARY_THREAD)
+// returns 0 if data of the required size were read
+// returns 1 if EOF was read
+int tryRead(int socketFd, void* buffer, int bufferSize);
 
+// according to message's value, it does the required task to handle the incoming message
 void handleIncomingMessage(int socketFd, char* message);
 
 #endif
