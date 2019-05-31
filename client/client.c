@@ -91,6 +91,8 @@ void handleExit(int exitNum) {
 
     close(serverSocketFd);
     freeBufferNodes(&cyclicBuffer);
+    freeList(&clientsList);
+    freeList(&filesList);
 
     printf("exiting...\n");
     exit(exitNum);
@@ -688,7 +690,7 @@ void handleIncomingMessage(int socketFd, char* message, char* dirName) {
         // close(selectedSocket);
     } else if (strcmp(message, GET_FILE) == 0) {
         printLn("Got GET_FILE message");
-        char* curFilePathNoInputDirName;
+        char* curFilePathNoInputDirName = NULL;
         time_t curFileVersion;
         short int curFilePathSize;
 

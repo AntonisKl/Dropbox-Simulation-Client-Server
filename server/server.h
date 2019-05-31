@@ -7,6 +7,7 @@
 #define MAX_CONNECTIONS 10
 
 int mySocketFd, newSocketFd;
+List* clientsList = NULL;
 
 void handleExit(int exitNum);
 
@@ -16,6 +17,6 @@ void trySend(int socketFd, void* buffer, int bufferSize, CallingMode callingMode
 
 int tryRead(int socketId, void* buffer, int bufferSize, CallingMode callingMode);
 
-void handleIncomingMessage(int socketFd, List* clientsList, char* message);
+void handleIncomingMessage(int socketFd, char* message);
 
 #endif

@@ -227,7 +227,7 @@ int createServer(int* socketFd, struct sockaddr_in* socketAddr, int portNum, int
     // memset(&socketAddr, 0, sizeof(socketAddr));
     socketAddr->sin_family = AF_INET;
     socketAddr->sin_addr = getLocalIp();
-    ;
+    
     socketAddr->sin_port = portNum;
 
     if (bind(*socketFd, (struct sockaddr*)socketAddr,

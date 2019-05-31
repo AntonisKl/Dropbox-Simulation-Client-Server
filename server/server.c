@@ -3,6 +3,8 @@
 void handleExit(int exitNum) {
     close(newSocketFd);
     close(mySocketFd);
+
+    freeList(&clientsList);
     exit(exitNum);
 }
 
@@ -79,7 +81,7 @@ void handleSigInt(int signal) {
     handleExit(1);
 }
 
-void handleIncomingMessage(int socketFd, List* clientsList, char* message) {
+void handleIncomingMessage(int socketFd, char* message) {
     if (strcmp(message, LOG_ON) == 0) {
         printLn("Got LOG_ON message");
 
@@ -216,7 +218,7 @@ int main(int argc, char** argv) {
 
     handleArgs(argc, argv, &portNum);
 
-    List* clientsList = initList(CLIENTS);
+    clientsList = initList(CLIENTS);
 
     if (createServer(&mySocketFd, &myAddr, portNum, MAX_CONNECTIONS)) {
         handleExit(1);
@@ -258,7 +260,7 @@ int main(int argc, char** argv) {
                     continue;
                 }
                 printf("Read message: %s\n", message);
-                handleIncomingMessage(i, clientsList, message);
+                handleIncomingMessage(i, message);
                 continue;
             }
 
