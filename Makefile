@@ -25,12 +25,9 @@ cyclic_buffer.o:  cyclic_buffer/cyclic_buffer.c
 list.o:  list/list.c
 	$(CC) $(CFLAGS) -c list/list.c
 
-# file_list.o:  file_list/file_list.c
-# 	$(CC) $(CFLAGS) -c file_list/file_list.c
-
 utils.o:  utils/utils.c
 	$(CC) $(CFLAGS) -c utils/utils.c
 	
 
 clean: 
-	$(RM) *.o exe/*
+	$(RM) *.o exe

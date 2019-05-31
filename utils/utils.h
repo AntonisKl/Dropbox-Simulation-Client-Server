@@ -8,7 +8,7 @@
 #include <ifaddrs.h>
 #include <limits.h>
 #include <netdb.h>
-#include <netinet/in.h> /* superset of previous */
+#include <netinet/in.h>
 #include <pthread.h>
 #include <signal.h>
 #include <stdio.h>
@@ -67,8 +67,6 @@ char fileExists(char* fileName);
 
 char dirExists(char* dirName);
 
-void createDir(char* dirPath);
-
 void _mkdir(const char* dir);
 
 void createAndWriteToFile(char* fileName, char* contents);
@@ -80,7 +78,5 @@ struct in_addr getLocalIp();
 int connectToPeer(int* socketFd, struct sockaddr_in* peerAddr);
 
 int createServer(int* socketFd, struct sockaddr_in* socketAddr, int portNum, int maxConnectionsNum);
-
-int selectSocket(int socketFd1, int socketFd2);
 
 #endif

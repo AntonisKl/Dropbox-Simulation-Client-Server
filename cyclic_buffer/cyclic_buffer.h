@@ -28,8 +28,6 @@ int cyclicBufferEmpty(CyclicBuffer* cyclicBuffer);
 
 int cyclicBufferFull(CyclicBuffer* cyclicBuffer);
 
-// int calculateBufferIndex(int index);
-
 int addNodeToCyclicBuffer(CyclicBuffer* cyclicBuffer, char* filePath, time_t version, uint32_t ip, int portNum);
 
 BufferNode* getNodeFromCyclicBuffer(CyclicBuffer* cyclicBuffer);

@@ -27,7 +27,7 @@ typedef struct ClientInfo {
     struct ClientInfo *nextClientInfo, *prevClientInfo;
 } ClientInfo;
 
-// List is sorted in ascending order by either the path of file or the port number of the client
+// List is sorted in ascending order by either the path of file or the port number of the client depending on mode's value
 typedef struct List {
     ListMode mode;
     void* firstNode;

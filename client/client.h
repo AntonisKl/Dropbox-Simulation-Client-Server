@@ -8,16 +8,12 @@
 #define MAX_CONNECTIONS 100
 #define FILE_CHUNK_SIZE 100
 #define MAX_CLIENT_NAME_SIZE 28  // format: 111.111.111.111_1234
-// #define MAX_IP_STRING_SIZE 16
 
 pthread_mutex_t cyclicBufferMutex = PTHREAD_MUTEX_INITIALIZER, clientListMutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cyclicBufferFullCond = PTHREAD_COND_INITIALIZER, cyclicBufferEmptyCond = PTHREAD_COND_INITIALIZER;
 
 pthread_t bufferFillerThreadId;
 pthread_t* threadIds = NULL;
-// char* threadsRunning;
-
-// typedef struct CyclicBuffer CyclicBuffer;
 
 int serverSocketFd, mySocketFd, workerThreadsNum;
 struct sockaddr_in serverAddr;

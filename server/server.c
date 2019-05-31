@@ -45,7 +45,6 @@ void trySend(int socketFd, void* buffer, int bufferSize, CallingMode callingMode
 int tryRead(int socketId, void* buffer, int bufferSize, CallingMode callingMode) {
     int returnValue, tempBufferSize = bufferSize, progress = 0;
 
-    // trySelect(fd);
     returnValue = read(socketId, buffer, tempBufferSize);
     while (returnValue < tempBufferSize && returnValue != 0) {  // rare case
         // not all desired bytes were read, so read the remaining bytes and add them to buffer
@@ -59,15 +58,11 @@ int tryRead(int socketId, void* buffer, int bufferSize, CallingMode callingMode)
 
         tempBufferSize -= returnValue;
         progress += returnValue;
-        // trySelect(socketId);
         returnValue = read(socketId, buffer + progress, tempBufferSize);  // read remaining bytes that aren't written yet
     }
 
-    if (returnValue == 0) {  // 0 = EOF which means that writer failed and closed the pipe early
-        // handleExit(1, SIGUSR1);
-        printf("EOF\n");
+    if (returnValue == 0)  // 0 = EOF which means that client closed the connection
         return 1;
-    }
 
     return 0;
 }
@@ -88,10 +83,8 @@ void handleIncomingMessage(int socketFd, char* message) {
         int curPortNum, curPortNumToSend;
         struct in_addr curIpStruct, curIpStructToSend;
         tryRead(socketFd, &curIpStruct.s_addr, 4, MAIN_THREAD);
-        printLn("after read 1");
 
         tryRead(socketFd, &curPortNum, 4, MAIN_THREAD);
-        printLn("after read 2");
 
         curIpStructToSend.s_addr = curIpStruct.s_addr;
         curPortNumToSend = curPortNum;
@@ -103,13 +96,10 @@ void handleIncomingMessage(int socketFd, char* message) {
         struct sockaddr_in clientAddr;
         ClientInfo* curClientInfo = clientsList->firstNode;
         while (curClientInfo != NULL) {
-            printf("LOG_ON: ip1: %s, port1: %d, ip2: %s, port2: %d\n", inet_ntoa(curClientInfo->ipStruct), curClientInfo->portNumber, inet_ntoa(curIpStruct), curPortNum);
 
-            if (curClientInfo->ipStruct.s_addr == curIpStruct.s_addr && curClientInfo->portNumber == curPortNum) {
-                printf("not sending clieeeeeeeeeeeeeeeeeeent1111111111111111\n");
+            if (curClientInfo->ipStruct.s_addr == curIpStruct.s_addr && curClientInfo->portNumber == curPortNum) 
                 continue;
-            }
-
+            
             clientAddr.sin_family = AF_INET;
             clientAddr.sin_port = curClientInfo->portNumber;
             clientAddr.sin_addr.s_addr = curClientInfo->ipStruct.s_addr;
@@ -117,8 +107,6 @@ void handleIncomingMessage(int socketFd, char* message) {
             if (connectToPeer(&clientSocketFd, &clientAddr) == 1)
                 handleExit(1);
 
-            // char curBuffer[32];
-            // sprintf(curBuffer, "%s", USER_ON);
             trySend(clientSocketFd, USER_ON, MAX_MESSAGE_SIZE, MAIN_THREAD);
             trySend(clientSocketFd, &curIpStructToSend.s_addr, 4, MAIN_THREAD);
             trySend(clientSocketFd, &curPortNumToSend, 4, MAIN_THREAD);
@@ -126,9 +114,7 @@ void handleIncomingMessage(int socketFd, char* message) {
             close(clientSocketFd);
             curClientInfo = curClientInfo->nextClientInfo;
         }
-        // printf("ha");
         addNodeToList(clientsList, initClientInfo(curIpStruct, curPortNum));
-        printf("added node to list\n");
     } else if (strcmp(message, GET_CLIENTS) == 0) {
         printLn("Got GET_CLIENTS message");
 
@@ -141,11 +127,6 @@ void handleIncomingMessage(int socketFd, char* message) {
         int portNumToSend;
         ClientInfo* curClientInfo = clientsList->firstNode;
         while (curClientInfo != NULL) {
-            // printf("ip1: %s, port1: %d, ip2: %s, port2: %d\n",inet_ntoa( curClientInfo->ipStruct), curClientInfo->portNumber, inet_ntoa(incomingAddr.sin_addr), incomingAddr.sin_port );
-            // if (curClientInfo->ipStruct.s_addr == ntohl( incomingAddr.sin_addr.s_addr) && curClientInfo->portNumber == htons(incomingAddr.sin_port)) {
-            //     printf("not sending clieeeeeeeeeeeeeeeeeeen\n");
-            //     continue;
-            // }
             ipToSend = htonl(curClientInfo->ipStruct.s_addr);
             portNumToSend = htons(curClientInfo->portNumber);
 
@@ -164,12 +145,12 @@ void handleIncomingMessage(int socketFd, char* message) {
         curPortNumToSend = curPortNum;
         curIpStruct.s_addr = ntohl(curIpStruct.s_addr);
         curPortNum = ntohs(curPortNum);
+        printLn("Got LOG_OFF message");
 
         printf("Got ip: %s, port: %d\n", inet_ntoa(curIpStruct), curPortNum);
 
         if (deleteNodeFromList(clientsList, &curPortNum, &curIpStruct.s_addr) == -1) {
             trySend(socketFd, ERROR_IP_PORT_NOT_FOUND_IN_LIST, MAX_MESSAGE_SIZE, MAIN_THREAD);
-            // close(socketFd);
             return;
         }
 
@@ -180,7 +161,6 @@ void handleIncomingMessage(int socketFd, char* message) {
             clientAddr.sin_family = AF_INET;
             clientAddr.sin_port = curClientInfo->portNumber;
             clientAddr.sin_addr.s_addr = curClientInfo->ipStruct.s_addr;
-            printf("Sending USER_OFF to client with ip: %s, port: %d\n", inet_ntoa(curClientInfo->ipStruct), curClientInfo->portNumber);
 
             if (connectToPeer(&clientSocketFd, &clientAddr) == 1)
                 handleExit(1);
@@ -272,16 +252,7 @@ int main(int argc, char** argv) {
 
             printLn("Accepted new incoming connection");
 
-            // char message[MAX_MESSAGE_SIZE];
-            // if (tryRead(i, message, MAX_MESSAGE_SIZE, MAIN_THREAD) == 1) {
-            //     close(i);
-            //     FD_CLR(i, &activeSocketsSet);
-            // }
-            // printf("Read message: %s\n", message);
-            // handleIncomingMessage(clientsList, message);
-
             FD_SET(newSocketFd, &activeSocketsSet);
         }
-        // close(newSocketFd);
     }
 }
