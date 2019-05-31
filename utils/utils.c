@@ -149,8 +149,10 @@ int connectToPeer(int* socketFd, struct sockaddr_in* peerAddr) {
     if (connected) {
         printf("Connected to port %d and ip %s\n", peerAddr->sin_port, inet_ntoa(peerAddr->sin_addr));
         return 0;
-    } else
+    } else {
+        close(*socketFd);
         return 1;
+    }
 }
 
 int createServer(int* socketFd, struct sockaddr_in* socketAddr, int portNum, int maxConnectionsNum) {

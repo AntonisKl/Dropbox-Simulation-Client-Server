@@ -16,10 +16,14 @@ void handleExit(int exitNum) {
         if (threadsRunning == NULL || !threadsRunning[i])
             continue;
 
+        printf("i: %d\n", i);
         pthread_mutex_lock(&cyclicBufferMutex);
 
         while (cyclicBufferFull(&cyclicBuffer)) {
-            pthread_cond_wait(&cyclicBufferFullCond, &cyclicBufferMutex);
+             struct timespec timeout;
+            clock_gettime(CLOCK_REALTIME, &timeout);
+            timeout.tv_sec += 1;
+            pthread_cond_timedwait(&cyclicBufferFullCond, &cyclicBufferMutex, &timeout);
         }
         // printf("worker thread i: %d, 4\n", i);
 
@@ -156,7 +160,7 @@ void handleArgs(int argc, char** argv, char** dirName, int* portNum, int* worker
     return;
 }
 
-void populateFileList(List* fileList, char* inputDirName, int indent) {
+void populateFileList(List* fileList, char* inputDirName, int indent, char* rootDirName) {
     DIR* dir;
     struct dirent* entry;
     char isEmpty = 1;
@@ -180,14 +184,14 @@ void populateFileList(List* fileList, char* inputDirName, int indent) {
 
         if (!S_ISREG(curStat.st_mode)) {  // is a directory
             printf("dir: %s\n", path);
-            populateFileList(fileList, path, indent + 2);  // continue traversing directory
-        } else {                                           // is a file
+            populateFileList(fileList, path, indent + 2, rootDirName);  // continue traversing directory
+        } else {                                                        // is a file
             printf("file: %s\n", path);
             addNodeToList(fileList, initFile(path, curStat.st_size, curStat.st_mtime));  // add a REGULAR_FILE node to FileList
         }
     }
 
-    if (isEmpty == 1) {
+    if (isEmpty == 1 && strcmp(inputDirName, rootDirName) != 0) {
         printf("he\n");
         // snprintf(path, PATH_MAX, "%s/%s", inputDirName, entry->d_name);  // append to inputDirName the current file's name
         stat(inputDirName, &curStat);
@@ -210,30 +214,30 @@ void trySend(int socketFd, void* buffer, int bufferSize, CallingMode callingMode
     return;
 }
 
-void tryInitAndSend(int* socketFd, void* buffer, int bufferSize, CallingMode callingMode, struct sockaddr_in* addr, int portNum) {
-    printf("haaaaaaaaaaaaaaaaaaaaaaaaaaaiiiii\n");
+// void tryInitAndSend(int* socketFd, void* buffer, int bufferSize, CallingMode callingMode, struct sockaddr_in* addr, int portNum) {
+//     printf("haaaaaaaaaaaaaaaaaaaaaaaaaaaiiiii\n");
 
-    addr->sin_family = AF_INET;
-    addr->sin_port = portNum;
-    if (connectToPeer(socketFd, addr) == 1) {
-        if (callingMode == MAIN_THREAD)
-            handleExit(1);
-        else
-            pthread_exit((void**)1);
-    }
+//     addr->sin_family = AF_INET;
+//     addr->sin_port = portNum;
+//     if (connectToPeer(socketFd, addr) == 1) {
+//         if (callingMode == MAIN_THREAD)
+//             handleExit(1);
+//         else
+//             pthread_exit((void**)1);
+//     }
 
-    if (send(*socketFd, buffer, bufferSize, 0) == -1) {  // send LOG_ON to server
-        perror("Send error");
-        if (callingMode == MAIN_THREAD)
-            handleExit(1);
-        else
-            pthread_exit((void**)1);
-    }
+//     if (send(*socketFd, buffer, bufferSize, 0) == -1) {  // send LOG_ON to server
+//         perror("Send error");
+//         if (callingMode == MAIN_THREAD)
+//             handleExit(1);
+//         else
+//             pthread_exit((void**)1);
+//     }
 
-    return;
-}
+//     return;
+// }
 
-void tryRead(int socketId, void* buffer, int bufferSize, CallingMode callingMode) {
+int tryRead(int socketId, void* buffer, int bufferSize, CallingMode callingMode) {
     int returnValue, tempBufferSize = bufferSize, progress = 0;
 
     // trySelect(fd);
@@ -254,11 +258,11 @@ void tryRead(int socketId, void* buffer, int bufferSize, CallingMode callingMode
         returnValue = read(socketId, buffer + progress, tempBufferSize);  // read remaining bytes that aren't written yet
     }
 
-    // if (returnValue == 0) {  // 0 = EOF which means that writer failed and closed the pipe early
-    //     handleExit(1, SIGUSR1);
-    // }
+    if (returnValue == 0) {  // 0 = EOF which means that writer failed and closed the pipe early
+        return 1;
+    }
 
-    return;
+    return 0;
 }
 
 void buildClientName(char (*clientName)[], uint32_t ip, int portNum) {
@@ -291,6 +295,7 @@ void handleSigIntMainThread(int signal) {
 // }
 
 void* bufferFillerThreadJob(void* a) {
+    printLn("buffer filler job started!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
     // struct sigaction sigAction;
     // // setup the sighub handler
     // sigAction.sa_handler = &handleSigUsrSecondaryThread;
@@ -326,10 +331,9 @@ void* bufferFillerThreadJob(void* a) {
             break;
         }
 
-        struct timespec timeout;
         // clock_gettime(CLOCK_REALTIME, &timeoutTime);
-        timeout.tv_sec = 10;
-        pthread_mutex_timedlock(&clientListMutex, &timeout);
+        printf("buffer filler thread will lock client list's mutex\n");
+        pthread_mutex_lock(&clientListMutex);
 
         curClientInfo = findNodeInList(clientsList, &nextClientPortNum, &nextClientIp);
 
@@ -339,9 +343,12 @@ void* bufferFillerThreadJob(void* a) {
         } else {
             nextClientIp = -1;
         }
+        printf("buffer filler thread will lock cyclicBufferMutex\n");
 
         pthread_mutex_lock(&cyclicBufferMutex);
         while (cyclicBufferFull(&cyclicBuffer)) {
+                    printf("buffer filler thread waiting on full condition\n");
+
             pthread_cond_wait(&cyclicBufferFullCond, &cyclicBufferMutex);
         }
         if (addNodeToCyclicBuffer(&cyclicBuffer, NULL, -1, curClientInfo->ipStruct.s_addr, curClientInfo->portNumber) == 1) {
@@ -350,9 +357,14 @@ void* bufferFillerThreadJob(void* a) {
             pthread_mutex_unlock(&clientListMutex);
             break;
         }
+                    printf("buffer filler thread will unlock cyclicBufferMutex\n");
 
         pthread_mutex_unlock(&cyclicBufferMutex);
+                            printf("buffer filler thread will unlock clientListMutex\n");
+
         pthread_mutex_unlock(&clientListMutex);
+
+                            printf("buffer filler thread will signal cyclicBufferEmptyCond\n");
 
         pthread_cond_signal(&cyclicBufferEmptyCond);
 
@@ -408,10 +420,11 @@ void* workerThreadJob(void* index) {
         // printf("in worker thread with id %ld: while3 ========================================================\n", *(long int*)id);
 
         pthread_mutex_unlock(&cyclicBufferMutex);
+            pthread_cond_signal(&cyclicBufferFullCond);
 
         if (curBufferNode->portNumber != -1) {
             // if (cyclicBufferWasFull) {
-            pthread_cond_signal(&cyclicBufferFullCond);
+            // pthread_cond_signal(&cyclicBufferFullCond);
             // }
             printf("in worker thread: while4\n");
 
@@ -432,7 +445,7 @@ void* workerThreadJob(void* index) {
         curPeerSocketAddr.sin_family = AF_INET;
         curPeerSocketAddr.sin_port = curBufferNode->portNumber;
         curPeerSocketAddr.sin_addr.s_addr = curBufferNode->ip;
-
+        printf("haaaaaaaaaaaaaaaaaaaaaaaaa file path: %s\n", curBufferNode->filePath);
         short int filePathSize;
         time_t version;
         if (strcmp(curBufferNode->filePath, ",") == 0) {  // client buffer node
@@ -454,7 +467,7 @@ void* workerThreadJob(void* index) {
             tryRead(curPeerSocketFd, &totalFilesNum, 4, SECONDARY_THREAD);
             printf("worker thread --> total files num: %u\n", totalFilesNum);
 
-            char* pathNoInputDirName;
+            char* pathNoInputDirName = NULL;
 
             for (int i = 0; i < totalFilesNum; i++) {
                 printf("worker thread i: %d\n", i);
@@ -484,11 +497,12 @@ void* workerThreadJob(void* index) {
                 printf("buffer size while adding: %d\n", cyclicBuffer.curSize);
 
                 pthread_mutex_unlock(&cyclicBufferMutex);
+                printf("hiiiiiiiiiii\n");
                 // if (cyclicBufferWasEmpty) {
                 pthread_cond_signal(&cyclicBufferEmptyCond);
                 // }
+                printf("after cond signal\n");
 
-                // free pathNoInputDirName
                 if (pathNoInputDirName != NULL) {
                     free(pathNoInputDirName);
                     pathNoInputDirName = NULL;
@@ -499,11 +513,14 @@ void* workerThreadJob(void* index) {
             close(curPeerSocketFd);
         } else if (strcmp(curBufferNode->filePath, ",,") != 0) {  // file buffer node
             printf("Worker thread hanlding file nodegggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg\n");
-            char clientName[MAX_CLIENT_NAME_SIZE];
-            buildClientName(&clientName, curBufferNode->ip, curBufferNode->portNumber);
 
-            char filePath[strlen(clientName) + strlen(curBufferNode->filePath) + 1];
-            sprintf(filePath, "%s/%s", clientName, curBufferNode->filePath);
+            char curClientName[MAX_CLIENT_NAME_SIZE];
+            buildClientName(&curClientName, curBufferNode->ip, curBufferNode->portNumber);
+            int filePathLen = strlen(clientName) + strlen(curClientName) + strlen(curBufferNode->filePath) + 3;
+            printf("file path length: %d\n", filePathLen);
+            char filePath[filePathLen];
+            sprintf(filePath, "%s/%s/%s", clientName, curClientName, curBufferNode->filePath);
+            printf("+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++= filePath: |%s|\n", filePath);
 
             if (connectToPeer(&curPeerSocketFd, &curPeerSocketAddr) == 1)
                 pthread_exit((void**)-1);
@@ -527,7 +544,7 @@ void* workerThreadJob(void* index) {
 
             char incomingMessage[MAX_MESSAGE_SIZE];
             tryRead(curPeerSocketFd, incomingMessage, MAX_MESSAGE_SIZE, SECONDARY_THREAD);
-            printf("worker thread .................................... message received: %s\n", incomingMessage);
+            printf("worker thread .................................... with id %ld message received: %s\n", pthread_self(), incomingMessage);
             if (strcmp(incomingMessage, FILE_SIZE) == 0) {
                 int incomingVersion;
                 tryRead(curPeerSocketFd, &incomingVersion, 8, SECONDARY_THREAD);
@@ -548,7 +565,7 @@ void* workerThreadJob(void* index) {
                     close(curPeerSocketFd);
                     continue;
                 } else if (contentsSize == 0) {  // is an empty file
-                    char tempFilePath[strlen(filePath) + 1];
+                    char tempFilePath[filePathLen];
                     strcpy(tempFilePath, filePath);
                     removeFileName(tempFilePath);
                     // printf("file path: %s\n", tempFilePath);
@@ -594,10 +611,15 @@ void* workerThreadJob(void* index) {
 
                 // char mirrorFilePath[strlen(mirrorIdDirPath) + strlen(filePath) + 2];  // mirrorFilePath: the path of the mirrored file
                 // sprintf(mirrorFilePath, "%s/%s", mirrorIdDirPath, filePath);           // format: [mirrorDir]/[id]/[filePath]
+                printf("file path before remove file name1: %s\n", filePath);
 
-                char tempFilePath[strlen(filePath) + 1];
+                char tempFilePath[filePathLen];
+                printf("file path before remove file name: %s\n", filePath);
+
                 strcpy(tempFilePath, filePath);
+
                 removeFileName(tempFilePath);
+
                 // printf("file path: %s\n", tempFilePath);
                 if (!dirExists(tempFilePath)) {
                     _mkdir(tempFilePath);
@@ -617,6 +639,209 @@ void* workerThreadJob(void* index) {
         freeBufferNode(&curBufferNode);
     }
     pthread_exit((void**)0);
+}
+
+void handleIncomingMessage(int socketFd, char* message, char* dirName) {
+    if (strcmp(message, GET_FILE_LIST) == 0) {
+        printLn("Got GET_FILE_LIST message");
+        printf("111\n");
+
+        trySend(socketFd, FILE_LIST, MAX_MESSAGE_SIZE, MAIN_THREAD);
+        printf("111.5\n");
+
+        trySend(socketFd, &filesList->size, 4, MAIN_THREAD);
+        printf("will send file list size: %u\n", filesList->size);
+
+        printf("222\n");
+        File* curFile = filesList->firstNode;
+        while (curFile != NULL) {
+            char curFilePathCopy[strlen(curFile->path) + 1];
+            strcpy(curFilePathCopy, curFile->path);  // temporarily store current file's path in order to manipulate it and get cut the input directory's name from it
+            // pathNoInputDirName: current file's path without the input directory's name
+            char* pathNoInputDirName = strtok(curFilePathCopy, "/");  // cut the input directory's name
+            pathNoInputDirName = strtok(NULL, "\n");                  // until end of path
+
+            short int filePathSize = strlen(pathNoInputDirName);
+            printf("will send file path size: %d\n", filePathSize);
+            trySend(socketFd, &filePathSize, 2, MAIN_THREAD);  // short int
+
+            printf("will send path: %s\n", pathNoInputDirName);
+
+            trySend(socketFd, pathNoInputDirName, filePathSize, MAIN_THREAD);
+            printf("will send version: %ld\n", curFile->version);
+
+            trySend(socketFd, &curFile->version, 8, MAIN_THREAD);
+
+            curFile = curFile->nextFile;
+        }
+        printf("handled all files\n");
+        // close(selectedSocket);
+    } else if (strcmp(message, GET_FILE) == 0) {
+        printLn("Got GET_FILE message");
+        char* curFilePathNoInputDirName;
+        time_t curFileVersion;
+        short int curFilePathSize;
+
+        tryRead(socketFd, &curFilePathSize, 2, MAIN_THREAD);
+
+        curFilePathNoInputDirName = (char*)malloc(curFilePathSize + 1);
+        memset(curFilePathNoInputDirName, 0, curFilePathSize + 1);
+
+        tryRead(socketFd, curFilePathNoInputDirName, curFilePathSize, MAIN_THREAD);
+        tryRead(socketFd, &curFileVersion, 8, MAIN_THREAD);
+
+        char curFilePath[strlen(dirName) + curFilePathSize];
+        // strcpy(curFilePath, dirName);
+        sprintf(curFilePath, "%s/%s", dirName, curFilePathNoInputDirName);
+
+        if (curFilePathNoInputDirName != NULL) {
+            free(curFilePathNoInputDirName);
+            curFilePathNoInputDirName = NULL;
+        }
+
+        // if (!fileExists(curFilePath)) {
+        //     trySend(newSocketFd, FILE_NOT_FOUND, MAX_MESSAGE_SIZE);
+        //     continue;
+        // }
+
+        File* curFile = findNodeInList(filesList, curFilePath, NULL);
+
+        if (curFile == NULL) {
+            trySend(socketFd, FILE_NOT_FOUND, MAX_MESSAGE_SIZE, MAIN_THREAD);
+            return;
+        }
+
+        if (curFile->version == curFileVersion) {
+            trySend(socketFd, FILE_UP_TO_DATE, MAX_MESSAGE_SIZE, MAIN_THREAD);
+            return;
+        }
+
+        trySend(socketFd, FILE_SIZE, MAX_MESSAGE_SIZE, MAIN_THREAD);
+
+        trySend(socketFd, &curFile->version, 8, MAIN_THREAD);
+        trySend(socketFd, &curFile->contentsSize, 4, MAIN_THREAD);
+
+        int fd;
+
+        if (curFile->contentsSize != -1) {  // is a regular file (not a directory)
+            // open the original file
+            fd = open(curFile->path, O_RDONLY | O_NONBLOCK);
+            if (fd < 0) {
+                perror("open failed");
+                handleExit(1);
+            }
+
+            char curBuffer[FILE_CHUNK_SIZE + 1];
+            // bytesWritten: the bytes of file contents that are written to fifo pipe (for logging purposes)
+            // remainingContentsSize: the number of bytes that are remaining to be read from the file
+            // tempBufferSize: temporary buffer size to read from file and write to fifo pipe in each while loop
+            int bytesWritten = 0, remainingContentsSize, tempBufferSize = FILE_CHUNK_SIZE;
+
+            // use the encrypted file's size or the original file's size according to the gpg encryption mode
+            remainingContentsSize = curFile->contentsSize;
+
+            // if the remaining contents of file have size less than the buffer size, read only the remaining contents from file to then write them to fifo pipe
+            tempBufferSize = (remainingContentsSize < FILE_CHUNK_SIZE ? remainingContentsSize : FILE_CHUNK_SIZE);
+
+            memset(curBuffer, 0, FILE_CHUNK_SIZE + 1);               // clear buffer
+            int readRetValue = read(fd, curBuffer, tempBufferSize);  // read a chunk of the current file
+            while (readRetValue > 0) {
+                if (readRetValue == -1) {
+                    perror("read failed");
+                    handleExit(1);
+                }
+
+                // tryWrite(fifoFd, buffer, tempBufferSize);  // write a chunk of the current file to fifo pipe
+
+                trySend(socketFd, curBuffer, tempBufferSize, MAIN_THREAD);
+
+                bytesWritten += tempBufferSize;           // for logging purposes
+                remainingContentsSize -= tempBufferSize;  // proceed tempBufferSize bytes
+
+                // if the remaining contents of file have size less than the buffer size, read only the remaining contents from file to then write them to fifo pipe
+                tempBufferSize = (remainingContentsSize < FILE_CHUNK_SIZE ? remainingContentsSize : FILE_CHUNK_SIZE);
+
+                memset(curBuffer, 0, FILE_CHUNK_SIZE + 1);           // clear buffer
+                readRetValue = read(fd, curBuffer, tempBufferSize);  // read a chunk of the current file
+            }
+
+            // // write to log
+            // fprintf(logFileP, "Writer with pid %d sent file with path \"%s\" and wrote %d bytes to fifo pipe\n", getpid(), pathNoInputDirName, bytesWritten);
+            // fflush(logFileP);
+
+            // try to close current file
+            if (close(fd) == -1) {
+                perror("Close failed");
+                handleExit(1);
+            }
+        }
+        //  else {  // is an empty directory
+        // write directory's contents size which is always -1 to fifo pipe and write to log
+
+        // trySend(newSocketFd, &curFile->contentsSize, 4);
+
+        // fprintf(logFileP, "Writer with pid %d wrote 4 bytes of metadata to fifo pipe\n", getpid());
+        // fflush(logFileP);
+
+        // // write to log
+        // fprintf(logFileP, "Writer with pid %d sent file with path \"%s\" and wrote %d bytes to fifo pipe\n", getpid(), pathNoInputDirName, 0);
+        // fflush(logFileP);
+        // }
+
+        // trySend(newSocketFd, )  // send whole file at once //////////////////////////////////////////////////////////////////////////// maybe change this to chunks
+        // close(selectedSocket);
+    } else if (strcmp(message, USER_OFF) == 0) {
+        printLn("Got USER_OFF message");
+        int curPortNum;
+        struct in_addr curIpStruct;
+
+        tryRead(socketFd, &curIpStruct.s_addr, 4, MAIN_THREAD);
+        tryRead(socketFd, &curPortNum, 4, MAIN_THREAD);
+        // curIp = ntohl(curIp);
+        // curPortNum = ntohs(curPortNum);
+        curIpStruct.s_addr = ntohl(curIpStruct.s_addr);
+        curPortNum = ntohs(curPortNum);
+        printf("ip: %s, port: %d\n", inet_ntoa(curIpStruct), curPortNum);
+
+        // if (curIp != serverAddr.sin_addr.s_addr || curPortNum != serverPort) {
+        //     printErrorLn("Got USER_OFF message from a non-server application\n");
+        //     continue;
+        // }
+
+        pthread_mutex_lock(&clientListMutex);
+        deleteNodeFromList(clientsList, &curPortNum, &curIpStruct.s_addr);
+        pthread_mutex_unlock(&clientListMutex);
+    } else if (strcmp(message, USER_ON) == 0) {
+        printLn("Got USER_ON message");
+        int curPortNum;
+        struct in_addr curIpStruct;
+        tryRead(socketFd, &curIpStruct.s_addr, 4, MAIN_THREAD);
+        tryRead(socketFd, &curPortNum, 4, MAIN_THREAD);
+        curIpStruct.s_addr = ntohl(curIpStruct.s_addr);
+        curPortNum = ntohs(curPortNum);
+        printf("ip: %s, port: %d\n", inet_ntoa(curIpStruct), curPortNum);
+
+        pthread_mutex_lock(&clientListMutex);
+
+        addNodeToList(clientsList, initClientInfo(curIpStruct, curPortNum));
+
+        pthread_mutex_unlock(&clientListMutex);
+
+        pthread_mutex_lock(&cyclicBufferMutex);
+
+        while (cyclicBufferFull(&cyclicBuffer)) {
+            pthread_cond_wait(&cyclicBufferFullCond, &cyclicBufferMutex);
+        }
+
+        addNodeToCyclicBuffer(&cyclicBuffer, NULL, -1, curIpStruct.s_addr, curPortNum);
+
+        pthread_mutex_unlock(&cyclicBufferMutex);
+
+        pthread_cond_signal(&cyclicBufferEmptyCond);
+    } else {
+        printf("Got unknown message: %s\n", message);
+        // keepConnection = 1;
+    }
 }
 
 int main(int argc, char** argv) {
@@ -653,6 +878,8 @@ int main(int argc, char** argv) {
     // socklen_t localAddrLength = sizeof(localAddr);
     localIpAddr = getLocalIp();
     printf("local address: %s\n", inet_ntoa(localIpAddr));
+
+    buildClientName(&clientName, localIpAddr.s_addr, portNum);
 
     // if (send(serverSocketFd, LOG_ON, MAX_MESSAGE_SIZE, 0) == -1) {  // send LOG_ON to server
     //     perror("Send error");
@@ -745,7 +972,7 @@ int main(int argc, char** argv) {
     printLn("Filled cyclic buffer");
 
     filesList = initList(FILES);
-    populateFileList(filesList, dirName, 0);
+    populateFileList(filesList, dirName, 0, dirName);
     printf("1\n");
     if (clientsInserted < clientsList->size) {
         pthread_create(&bufferFillerThreadId, NULL, bufferFillerThreadJob, NULL);  // 3rd arg is the function which I will add, 4th arg is the void* arg of the function
@@ -791,17 +1018,66 @@ int main(int argc, char** argv) {
 
     printLn("Created server to accept incoming connections");
 
-    int newSocketFd, selectedSocket;
+    int newSocketFd;
     struct sockaddr_in incomingAddr;
     int incomingAddrLen = sizeof(incomingAddr);
-    char keepConnection = 0;
+    // char keepConnection = 0;
+    fd_set activeSocketsSet, readSocketsSet;
+    /* Initialize the set of active sockets. */
+    FD_ZERO(&activeSocketsSet);
+    FD_SET(mySocketFd, &activeSocketsSet);
 
     while (1) {
         printLn("Listening for incoming connections");
 
-        if ((newSocketFd = accept(mySocketFd, (struct sockaddr*)&incomingAddr, (socklen_t*)&incomingAddrLen)) < 0) {
-            perror("Accept error");
+        // if ((newSocketFd = accept(mySocketFd, (struct sockaddr*)&incomingAddr, (socklen_t*)&incomingAddrLen)) < 0) {
+        //     perror("Accept error");
+        //     handleExit(1);
+        // }
+
+        /* Block until input arrives on one or more active sockets. */
+        readSocketsSet = activeSocketsSet;
+        if (select(FD_SETSIZE, &readSocketsSet, NULL, NULL, NULL) < 0) {
+            perror("Select error");
             handleExit(1);
+        }
+
+        /* Service all the sockets with input pending. */
+        for (int i = 0; i < FD_SETSIZE; ++i) {
+            if (!FD_ISSET(i, &readSocketsSet))
+                continue;
+
+            if (!(i == mySocketFd)) {
+                /* Data arriving on an already-connected socket. */
+                if (tryRead(i, message, MAX_MESSAGE_SIZE, MAIN_THREAD) == 1) {
+                    close(i);
+                    FD_CLR(i, &activeSocketsSet);
+                    continue;
+                }
+                printLn("Handling existing connection");
+
+                printf("Read message: %s\n", message);
+                handleIncomingMessage(i, message, dirName);
+                continue;
+            }
+
+            // socket is server socket, so accept new connection
+            if ((newSocketFd = accept(mySocketFd, (struct sockaddr*)&incomingAddr, (socklen_t*)&incomingAddrLen)) < 0) {
+                perror("Accept error");
+                handleExit(1);
+            }
+
+            printLn("Accepted new incoming connection");
+
+            // char message[MAX_MESSAGE_SIZE];
+            // if (tryRead(i, message, MAX_MESSAGE_SIZE, MAIN_THREAD) == 1) {
+            //     close(i);
+            //     FD_CLR(i, &activeSocketsSet);
+            // }
+            // printf("Read message: %s\n", message);
+            // handleIncomingMessage(clientsList, message);
+
+            FD_SET(newSocketFd, &activeSocketsSet);
         }
 
         // if ((selectedSocket = selectSocket(serverSocketFd, newSocketFd)) == -1) {
@@ -813,212 +1089,10 @@ int main(int argc, char** argv) {
         //     if (foundClientInfo == NULL)  // ignore incoming client
         //         continue;
         // }
-        selectedSocket = newSocketFd;
+        // selectedSocket = newSocketFd;
         // char* message = malloc(MAX_MESSAGE_SIZE);
         // memset(message, 0, MAX_MESSAGE_SIZE);
-        tryRead(selectedSocket, message, MAX_MESSAGE_SIZE, MAIN_THREAD);
-
-        if (strcmp(message, GET_FILE_LIST) == 0) {
-            printLn("Got GET_FILE_LIST message");
-            printf("111\n");
-
-            trySend(selectedSocket, FILE_LIST, MAX_MESSAGE_SIZE, MAIN_THREAD);
-            printf("111.5\n");
-
-            trySend(selectedSocket, &filesList->size, 4, MAIN_THREAD);
-            printf("will send file list size: %u\n", filesList->size);
-
-            printf("222\n");
-
-            File* curFile = filesList->firstNode;
-            while (curFile != NULL) {
-                char curFilePathCopy[strlen(curFile->path) + 1];
-                strcpy(curFilePathCopy, curFile->path);  // temporarily store current file's path in order to manipulate it and get cut the input directory's name from it
-                // pathNoInputDirName: current file's path without the input directory's name
-                char* pathNoInputDirName = strtok(curFilePathCopy, "/");  // cut the input directory's name
-                pathNoInputDirName = strtok(NULL, "\n");                  // until end of path
-
-                short int filePathSize = strlen(pathNoInputDirName);
-                printf("will send file path size: %d\n", filePathSize);
-                trySend(selectedSocket, &filePathSize, 2, MAIN_THREAD);  // short int
-
-                printf("will send path: %s\n", pathNoInputDirName);
-
-                trySend(selectedSocket, pathNoInputDirName, filePathSize, MAIN_THREAD);
-                printf("will send version: %ld\n", curFile->version);
-
-                trySend(selectedSocket, &curFile->version, 8, MAIN_THREAD);
-
-                curFile = curFile->nextFile;
-            }
-            printf("handled all files\n");
-            close(selectedSocket);
-        } else if (strcmp(message, GET_FILE) == 0) {
-            printLn("Got GET_FILE message");
-            char* curFilePathNoInputDirName;
-            time_t curFileVersion;
-            short int curFilePathSize;
-
-            tryRead(selectedSocket, &curFilePathSize, 2, MAIN_THREAD);
-
-            curFilePathNoInputDirName = (char*)malloc(curFilePathSize + 1);
-            memset(curFilePathNoInputDirName, 0, curFilePathSize + 1);
-
-            tryRead(selectedSocket, curFilePathNoInputDirName, curFilePathSize, MAIN_THREAD);
-            tryRead(selectedSocket, &curFileVersion, 8, MAIN_THREAD);
-
-            char curFilePath[strlen(dirName) + curFilePathSize];
-            // strcpy(curFilePath, dirName);
-            sprintf(curFilePath, "%s/%s", dirName, curFilePathNoInputDirName);
-
-            if (curFilePathNoInputDirName != NULL) {
-                free(curFilePathNoInputDirName);
-                curFilePathNoInputDirName = NULL;
-            }
-
-            // if (!fileExists(curFilePath)) {
-            //     trySend(newSocketFd, FILE_NOT_FOUND, MAX_MESSAGE_SIZE);
-            //     continue;
-            // }
-
-            File* curFile = findNodeInList(filesList, curFilePath, NULL);
-
-            if (curFile == NULL) {
-                trySend(selectedSocket, FILE_NOT_FOUND, MAX_MESSAGE_SIZE, MAIN_THREAD);
-                continue;
-            }
-
-            if (curFile->version == curFileVersion) {
-                trySend(selectedSocket, FILE_UP_TO_DATE, MAX_MESSAGE_SIZE, MAIN_THREAD);
-                continue;
-            }
-
-            trySend(selectedSocket, FILE_SIZE, MAX_MESSAGE_SIZE, MAIN_THREAD);
-
-            trySend(selectedSocket, &curFile->version, 8, MAIN_THREAD);
-            trySend(selectedSocket, &curFile->contentsSize, 4, MAIN_THREAD);
-
-            int fd;
-
-            if (curFile->contentsSize != -1) {  // is a regular file (not a directory)
-                // open the original file
-                fd = open(curFile->path, O_RDONLY | O_NONBLOCK);
-                if (fd < 0) {
-                    perror("open failed");
-                    handleExit(1);
-                }
-
-                char curBuffer[FILE_CHUNK_SIZE + 1];
-                // bytesWritten: the bytes of file contents that are written to fifo pipe (for logging purposes)
-                // remainingContentsSize: the number of bytes that are remaining to be read from the file
-                // tempBufferSize: temporary buffer size to read from file and write to fifo pipe in each while loop
-                int bytesWritten = 0, remainingContentsSize, tempBufferSize = FILE_CHUNK_SIZE;
-
-                // use the encrypted file's size or the original file's size according to the gpg encryption mode
-                remainingContentsSize = curFile->contentsSize;
-
-                // if the remaining contents of file have size less than the buffer size, read only the remaining contents from file to then write them to fifo pipe
-                tempBufferSize = (remainingContentsSize < FILE_CHUNK_SIZE ? remainingContentsSize : FILE_CHUNK_SIZE);
-
-                memset(curBuffer, 0, FILE_CHUNK_SIZE + 1);               // clear buffer
-                int readRetValue = read(fd, curBuffer, tempBufferSize);  // read a chunk of the current file
-                while (readRetValue > 0) {
-                    if (readRetValue == -1) {
-                        perror("read failed");
-                        handleExit(1);
-                    }
-
-                    // tryWrite(fifoFd, buffer, tempBufferSize);  // write a chunk of the current file to fifo pipe
-
-                    trySend(selectedSocket, curBuffer, tempBufferSize, MAIN_THREAD);
-
-                    bytesWritten += tempBufferSize;           // for logging purposes
-                    remainingContentsSize -= tempBufferSize;  // proceed tempBufferSize bytes
-
-                    // if the remaining contents of file have size less than the buffer size, read only the remaining contents from file to then write them to fifo pipe
-                    tempBufferSize = (remainingContentsSize < FILE_CHUNK_SIZE ? remainingContentsSize : FILE_CHUNK_SIZE);
-
-                    memset(curBuffer, 0, FILE_CHUNK_SIZE + 1);           // clear buffer
-                    readRetValue = read(fd, curBuffer, tempBufferSize);  // read a chunk of the current file
-                }
-
-                // // write to log
-                // fprintf(logFileP, "Writer with pid %d sent file with path \"%s\" and wrote %d bytes to fifo pipe\n", getpid(), pathNoInputDirName, bytesWritten);
-                // fflush(logFileP);
-
-                // try to close current file
-                if (close(fd) == -1) {
-                    perror("Close failed");
-                    handleExit(1);
-                }
-            }
-            //  else {  // is an empty directory
-            // write directory's contents size which is always -1 to fifo pipe and write to log
-
-            // trySend(newSocketFd, &curFile->contentsSize, 4);
-
-            // fprintf(logFileP, "Writer with pid %d wrote 4 bytes of metadata to fifo pipe\n", getpid());
-            // fflush(logFileP);
-
-            // // write to log
-            // fprintf(logFileP, "Writer with pid %d sent file with path \"%s\" and wrote %d bytes to fifo pipe\n", getpid(), pathNoInputDirName, 0);
-            // fflush(logFileP);
-            // }
-
-            // trySend(newSocketFd, )  // send whole file at once //////////////////////////////////////////////////////////////////////////// maybe change this to chunks
-            close(selectedSocket);
-        } else if (strcmp(message, USER_OFF) == 0) {
-            printLn("Got USER_OFF message");
-            int curPortNum;
-            struct in_addr curIpStruct;
-
-            tryRead(selectedSocket, &curIpStruct.s_addr, 4, MAIN_THREAD);
-            tryRead(selectedSocket, &curPortNum, 4, MAIN_THREAD);
-            // curIp = ntohl(curIp);
-            // curPortNum = ntohs(curPortNum);
-            curIpStruct.s_addr = ntohl(curIpStruct.s_addr);
-            curPortNum = ntohs(curPortNum);
-            printf("ip: %s, port: %d\n", inet_ntoa(curIpStruct), curPortNum);
-
-            // if (curIp != serverAddr.sin_addr.s_addr || curPortNum != serverPort) {
-            //     printErrorLn("Got USER_OFF message from a non-server application\n");
-            //     continue;
-            // }
-
-            pthread_mutex_lock(&clientListMutex);
-            deleteNodeFromList(clientsList, &curPortNum, &curIpStruct.s_addr);
-            pthread_mutex_unlock(&clientListMutex);
-        } else if (strcmp(message, USER_ON) == 0) {
-            printLn("Got USER_ON message");
-            int curPortNum;
-            struct in_addr curIpStruct;
-            tryRead(selectedSocket, &curIpStruct.s_addr, 4, MAIN_THREAD);
-            tryRead(selectedSocket, &curPortNum, 4, MAIN_THREAD);
-            curIpStruct.s_addr = ntohl(curIpStruct.s_addr);
-            curPortNum = ntohs(curPortNum);
-            printf("ip: %s, port: %d\n", inet_ntoa(curIpStruct), curPortNum);
-
-            pthread_mutex_lock(&clientListMutex);
-
-            addNodeToList(clientsList, initClientInfo(curIpStruct, curPortNum));
-
-            pthread_mutex_unlock(&clientListMutex);
-
-            pthread_mutex_lock(&cyclicBufferMutex);
-
-            while (cyclicBufferFull(&cyclicBuffer)) {
-                pthread_cond_wait(&cyclicBufferFullCond, &cyclicBufferMutex);
-            }
-
-            addNodeToCyclicBuffer(&cyclicBuffer, NULL, -1, curIpStruct.s_addr, curPortNum);
-
-            pthread_mutex_unlock(&cyclicBufferMutex);
-
-            pthread_cond_signal(&cyclicBufferEmptyCond);
-        } else {
-            printf("Got unknown message: %s\n", message);
-            keepConnection = 1;
-        }
+        // tryRead(selectedSocket, message, MAX_MESSAGE_SIZE, MAIN_THREAD);
     }
 
     // while messages are valid do what we want

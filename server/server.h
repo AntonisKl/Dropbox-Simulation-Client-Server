@@ -14,6 +14,8 @@ void handleArgs(int argc, char** argv, int* portNum);
 
 void trySend(int socketFd, void* buffer, int bufferSize, CallingMode callingMode);
 
-void tryRead(int socketId, void* buffer, int bufferSize, CallingMode callingMode);
+int tryRead(int socketId, void* buffer, int bufferSize, CallingMode callingMode);
+
+void handleIncomingMessage(int socketFd, List* clientsList, char* message);
 
 #endif
