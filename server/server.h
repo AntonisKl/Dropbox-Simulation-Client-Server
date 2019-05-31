@@ -4,7 +4,7 @@
 #include "../list/list.h"
 #include "../utils/utils.h"
 
-#define MAX_CONNECTIONS 10
+#define MAX_CONNECTIONS 50 // maximum open connections that are allowed for the server
 
 int mySocketFd, newSocketFd;
 List* clientsList = NULL;
@@ -13,7 +13,7 @@ void handleExit(int exitNum);
 
 void handleArgs(int argc, char** argv, int* portNum);
 
-void trySend(int socketFd, void* buffer, int bufferSize, CallingMode callingMode);
+void tryWrite(int socketFd, void* buffer, int bufferSize, CallingMode callingMode);
 
 int tryRead(int socketId, void* buffer, int bufferSize, CallingMode callingMode);
 

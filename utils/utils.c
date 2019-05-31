@@ -44,13 +44,18 @@ void _mkdir(const char* dir) {
     len = strlen(tmp);
     if (tmp[len - 1] == '/')
         tmp[len - 1] = 0;
-    for (p = tmp + 1; *p; p++)
+    for (p = tmp + 1; *p; p++) {
         if (*p == '/') {
             *p = 0;
-            mkdir(tmp, S_IRWXU);
+            if (!dirExists(tmp)) {
+                mkdir(tmp, S_IRWXU);
+            }
             *p = '/';
         }
-    mkdir(tmp, S_IRWXU);
+    }
+    if (!dirExists(tmp)) {
+        mkdir(tmp, S_IRWXU);
+    }
 }
 
 void createAndWriteToFile(char* fileName, char* contents) {
@@ -99,7 +104,7 @@ struct in_addr getLocalIp() {
     int family;
 
     if (getifaddrs(&ifaddr) == -1) {
-        perror("getifaddrs");
+        perror("getifaddrs error");
         exit(EXIT_FAILURE);
     }
 
@@ -128,7 +133,7 @@ int connectToPeer(int* socketFd, struct sockaddr_in* peerAddr) {
         perror("Socket creation error");
         return 1;
     }
-    printf("Created socket\n");
+
     int attempts = 1;
     char connected = 1;
     while (connect((*socketFd), (struct sockaddr*)peerAddr, sizeof(*peerAddr)) < 0) {
@@ -143,7 +148,7 @@ int connectToPeer(int* socketFd, struct sockaddr_in* peerAddr) {
     }
 
     if (connected) {
-        printf("Connected to port %d and ip %s\n", peerAddr->sin_port, inet_ntoa(peerAddr->sin_addr));
+        // printf("Connected to port %d and ip %s\n", peerAddr->sin_port, inet_ntoa(peerAddr->sin_addr));
         return 0;
     } else {
         close(*socketFd);

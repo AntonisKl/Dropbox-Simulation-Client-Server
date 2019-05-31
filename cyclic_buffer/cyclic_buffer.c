@@ -65,11 +65,13 @@ void freeBufferNode(BufferNode** bufferNode) {
     return;
 }
 
-void freeBufferNodes(CyclicBuffer* cyclicBuffer) {
+void freeBuffer(CyclicBuffer* cyclicBuffer) {
     if (cyclicBuffer != NULL) {
         BufferNode* curBufferNode;
         while ((curBufferNode = getNodeFromCyclicBuffer(cyclicBuffer)) != NULL) {
             freeBufferNode(&curBufferNode);
         }
+        free(cyclicBuffer->buffer);
+        cyclicBuffer->buffer = NULL;
     }
 }
