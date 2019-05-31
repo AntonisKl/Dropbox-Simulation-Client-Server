@@ -36,4 +36,6 @@ BufferNode* getNodeFromCyclicBuffer(CyclicBuffer* cyclicBuffer);
 
 void freeBufferNode(BufferNode** bufferNode);
 
+void freeBufferNodes(CyclicBuffer* cyclicBuffer);
+
 #endif

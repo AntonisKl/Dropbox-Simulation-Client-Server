@@ -90,6 +90,7 @@ void handleExit(int exitNum) {
     // threadIds = NULL;
 
     close(serverSocketFd);
+    freeBufferNodes(&cyclicBuffer);
 
     printf("exiting...\n");
     exit(exitNum);
