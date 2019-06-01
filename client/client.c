@@ -252,7 +252,7 @@ void handleSigIntMainThread(int signal) {
     }
     printf("Caught SIGINT\n");
 
-    handleExit(1);
+    handleExit(0);
 }
 
 void* bufferFillerThreadJob(void* a) {
