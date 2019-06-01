@@ -8,6 +8,7 @@ void handleExit(int exitNum) {
     // free allocated memory
     freeList(&clientsList);
 
+    printf("Exiting...\n");
     exit(exitNum);
 }
 
@@ -105,7 +106,6 @@ void handleIncomingMessage(int socketFd, char* message) {
             clientAddr.sin_port = curClientInfo->portNumber;
             clientAddr.sin_addr.s_addr = curClientInfo->ipStruct.s_addr;
 
-            printf("connecting to peer with ip: %s and port: %d\n", inet_ntoa(curClientInfo->ipStruct), curClientInfo->portNumber);
             if (connectToPeer(&clientSocketFd, &clientAddr) == 1)
                 handleExit(1);
 

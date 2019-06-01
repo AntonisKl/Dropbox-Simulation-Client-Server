@@ -513,10 +513,10 @@ void handleIncomingMessage(int socketFd, char* message, char* dirName) {
         File* curFile = filesList->firstNode;
         while (curFile != NULL) {
             char curFilePathCopy[strlen(curFile->path) + 1];
-            strcpy(curFilePathCopy, curFile->path);                   // temporarily store current file's path in order to manipulate it and get cut the input directory's name from it
-            char* pathNoInputDirName = strtok(curFilePathCopy, "/");  // cut input directory's name
-            pathNoInputDirName = strtok(NULL, "\n");                  // until end of path
+            strcpy(curFilePathCopy, curFile->path);                            // temporarily store current file's path in order to manipulate it and get cut the input directory's name from it
+            char* pathNoInputDirName = curFilePathCopy + strlen(dirName) + 1;  // cut input directory's name
 
+            printf("path no input dir: %s\n", pathNoInputDirName);
             short int filePathSize = strlen(pathNoInputDirName);
             // send file path's size
             tryWrite(socketFd, &filePathSize, 2, MAIN_THREAD);
@@ -819,7 +819,7 @@ int main(int argc, char** argv) {
             if (!FD_ISSET(i, &readSocketsSet))  // socket not ready
                 continue;
 
-            if (!(i == mySocketFd)) { // already-connected socket
+            if (!(i == mySocketFd)) {  // already-connected socket
                 // data arrived on an already connected socket
                 if (tryRead(i, message, MAX_MESSAGE_SIZE, MAIN_THREAD) == 1) {
                     close(i);
