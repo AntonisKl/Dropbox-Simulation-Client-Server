@@ -516,7 +516,6 @@ void handleIncomingMessage(int socketFd, char* message, char* dirName) {
             strcpy(curFilePathCopy, curFile->path);                            // temporarily store current file's path in order to manipulate it and get cut the input directory's name from it
             char* pathNoInputDirName = curFilePathCopy + strlen(dirName) + 1;  // cut input directory's name
 
-            printf("path no input dir: %s\n", pathNoInputDirName);
             short int filePathSize = strlen(pathNoInputDirName);
             // send file path's size
             tryWrite(socketFd, &filePathSize, 2, MAIN_THREAD);
